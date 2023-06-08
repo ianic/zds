@@ -37,6 +37,8 @@ pub fn Intrusive(
         /// with runtime-safety, assertions will help verify this property.
         pub fn insert(self: *Self, v: *T) void {
             self.root = if (self.root) |root| self.meld(v, root) else v;
+            assert(self.root.?.heap.prev == null); // root doesn't have prev
+            assert(self.root.?.heap.next == null); // root doesn't have siblings
         }
 
         /// Look at the next minimum value but do not remove it.
@@ -98,48 +100,68 @@ pub fn Intrusive(
         /// root "root", "v" must always be the first param.
         fn meld(self: *Self, a: *T, b: *T) *T {
             assert(a.heap.next == null);
+            assert(b.heap.prev == null);
+            assert(a.heap.prev == null);
 
             if (less(self.context, a, b)) {
-                // B points back to A
-                b.heap.prev = a;
+                // a is new root
+                // b is child of a
+                // previous b next is now a next
+                // previous a child is now b next
 
-                // If B has siblings, then A inherits B's siblings
-                // and B's immediate sibling must point back to A to
-                // maintain the doubly linked list.
+                // b.next to a.next
                 if (b.heap.next) |b_next| {
+                    assert(b_next.heap.prev == b);
                     a.heap.next = b_next;
                     b_next.heap.prev = a;
+                    b.heap.next = null;
                 }
 
-                // If A has a child, then B becomes the leftmost sibling
-                // of that child.
+                // a.child to b.next
                 if (a.heap.child) |a_child| {
+                    assert(a_child.heap.prev == a);
                     b.heap.next = a_child;
                     a_child.heap.prev = b;
                 }
 
-                // B becomes the leftmost child of A
+                // b to a.child
                 a.heap.child = b;
+                b.heap.prev = a;
 
                 return a;
             }
 
-            // Replace A with B in the tree. Any of B's children
-            // become siblings of A. A becomes the leftmost child of B.
-            // A points back to B
-            b.heap.prev = a.heap.prev;
-            a.heap.prev = b;
+            // b is new root
+            // a is child of b
+            // previous b child is now a next
+
+            // b.child to a.next
             if (b.heap.child) |b_child| {
+                assert(b_child.heap.prev == b);
                 a.heap.next = b_child;
                 b_child.heap.prev = a;
             }
+            // a to b.child
             b.heap.child = a;
+            a.heap.prev = b;
             return b;
         }
 
         /// Combine the siblings of the leftmost value "left" into a single
         /// new rooted with the minimum value.
         fn combine_siblings(self: *Self, left: *T) *T {
+            var a = left;
+
+            a.heap.prev = null;
+            while (true) {
+                var b = a.heap.next orelse return a;
+                a.heap.next = null;
+                b.heap.prev = null;
+                a = self.meld(a, b);
+            }
+        }
+
+        fn combine_siblings_original(self: *Self, left: *T) *T {
             left.heap.prev = null;
 
             // Merge pairs right
@@ -148,6 +170,8 @@ pub fn Intrusive(
                 while (true) {
                     var b = a.heap.next orelse break :root a;
                     a.heap.next = null;
+                    b.heap.prev = null;
+                    std.debug.print(":", .{});
                     b = self.meld(a, b);
                     a = b.heap.next orelse break :root b;
                 }
@@ -157,6 +181,8 @@ pub fn Intrusive(
             while (true) {
                 var b = root.heap.prev orelse return root;
                 b.heap.next = null;
+                root.heap.prev = null;
+                std.debug.print(";", .{});
                 root = self.meld(b, root);
             }
         }
@@ -174,18 +200,7 @@ pub fn IntrusiveField(comptime T: type) type {
 }
 
 test "heap" {
-    const Elem = struct {
-        const Self = @This();
-        value: usize = 0,
-        heap: IntrusiveField(Self) = .{},
-    };
-
-    const Heap = Intrusive(Elem, void, (struct {
-        fn less(ctx: void, a: *Elem, b: *Elem) bool {
-            _ = ctx;
-            return a.value < b.value;
-        }
-    }).less);
+    const Heap = Intrusive(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 12 };
     var b: Elem = .{ .value = 24 };
@@ -199,7 +214,6 @@ test "heap" {
     h.insert(&d);
     h.remove(&d);
 
-    const testing = std.testing;
     try testing.expect(h.deleteMin().?.value == 7);
     try testing.expect(h.deleteMin().?.value == 12);
     try testing.expect(h.deleteMin().?.value == 24);
@@ -207,18 +221,7 @@ test "heap" {
 }
 
 test "heap remove root" {
-    const Elem = struct {
-        const Self = @This();
-        value: usize = 0,
-        heap: IntrusiveField(Self) = .{},
-    };
-
-    const Heap = Intrusive(Elem, void, (struct {
-        fn less(ctx: void, a: *Elem, b: *Elem) bool {
-            _ = ctx;
-            return a.value < b.value;
-        }
-    }).less);
+    const Heap = Intrusive(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 12 };
     var b: Elem = .{ .value = 24 };
@@ -228,24 +231,12 @@ test "heap remove root" {
     h.insert(&b);
     h.remove(&a);
 
-    const testing = std.testing;
     try testing.expect(h.deleteMin().?.value == 24);
     try testing.expect(h.deleteMin() == null);
 }
 
 test "heap remove with children" {
-    const Elem = struct {
-        const Self = @This();
-        value: usize = 0,
-        heap: IntrusiveField(Self) = .{},
-    };
-
-    const Heap = Intrusive(Elem, void, (struct {
-        fn less(ctx: void, a: *Elem, b: *Elem) bool {
-            _ = ctx;
-            return a.value < b.value;
-        }
-    }).less);
+    const Heap = Intrusive(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 36 };
     var b: Elem = .{ .value = 24 };
@@ -257,27 +248,13 @@ test "heap remove with children" {
     h.insert(&c);
     h.remove(&b);
 
-    const testing = std.testing;
     try testing.expect(h.deleteMin().?.value == 12);
     try testing.expect(h.deleteMin().?.value == 36);
     try testing.expect(h.deleteMin() == null);
 }
 
 test "heap equal values" {
-    const testing = std.testing;
-
-    const Elem = struct {
-        const Self = @This();
-        value: usize = 0,
-        heap: IntrusiveField(Self) = .{},
-    };
-
-    const Heap = Intrusive(Elem, void, (struct {
-        fn less(ctx: void, a: *Elem, b: *Elem) bool {
-            _ = ctx;
-            return a.value < b.value;
-        }
-    }).less);
+    const Heap = Intrusive(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 1 };
     var b: Elem = .{ .value = 2 };
@@ -290,6 +267,8 @@ test "heap equal values" {
     h.insert(&c);
     h.insert(&d);
 
+    //printDotGraph(Elem, h.root.?);
+
     try testing.expect(h.deleteMin().?.value == 1);
     try testing.expect(h.deleteMin().?.value == 2);
     try testing.expect(h.deleteMin().?.value == 3);
@@ -297,46 +276,179 @@ test "heap equal values" {
     try testing.expect(h.deleteMin() == null);
 }
 
-test "heap: million values" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    const Elem = struct {
-        const Self = @This();
-        value: usize = 0,
-        heap: IntrusiveField(Self) = .{},
-    };
-
-    const Heap = Intrusive(Elem, void, (struct {
-        fn less(ctx: void, a: *Elem, b: *Elem) bool {
-            _ = ctx;
-            return a.value < b.value;
-        }
-    }).less);
-
-    const NUM_TIMERS: usize = 1000 * 1000;
-    var elems = try alloc.alloc(Elem, NUM_TIMERS);
-    defer alloc.free(elems);
-
-    var i: usize = 0;
-    var value: usize = 0;
-    while (i < NUM_TIMERS) : (i += 1) {
-        if (i % 100 == 0) value += 1;
-        elems[i] = .{ .value = value };
+const Elem = struct {
+    const Self = @This();
+    value: usize = 0,
+    heap: IntrusiveField(Self) = .{},
+    fn less(ctx: void, a: *Self, b: *Self) bool {
+        _ = ctx;
+        return a.value < b.value;
     }
+};
+
+const testing = std.testing;
+
+test "heap: random values" {
+    const alloc = testing.allocator;
+    const RndGen = std.rand.DefaultPrng;
+    var rnd = RndGen.init(0);
+
+    const num_runs = 1024;
+    var runs: usize = 0;
+    while (runs < num_runs) : (runs += 1) {
+        const Heap = Intrusive(Elem, void, Elem.less);
+
+        const num_elems: usize = 1024;
+        var elems = try alloc.alloc(Elem, num_elems);
+        defer alloc.free(elems);
+
+        var i: usize = 0;
+        var value: usize = 0;
+        while (i < num_elems) : (i += 1) {
+            value = rnd.random().int(u32);
+            elems[i] = .{ .value = value };
+        }
+
+        var h: Heap = .{ .context = {} };
+        for (elems) |*elem| {
+            h.insert(elem);
+        }
+
+        var count: usize = 0;
+        var last: usize = 0;
+        while (h.deleteMin()) |elem| {
+            count += 1;
+            try testing.expect(elem.value >= last);
+            last = elem.value;
+        }
+        try testing.expect(h.deleteMin() == null);
+        try testing.expect(count == num_elems);
+    }
+}
+
+test "heap: remove random values" {
+    const alloc = testing.allocator;
+    const RndGen = std.rand.DefaultPrng;
+    var rnd = RndGen.init(0);
+
+    const num_runs = 1024;
+    var runs: usize = 0;
+    while (runs < num_runs) : (runs += 1) {
+        const Heap = Intrusive(Elem, void, Elem.less);
+
+        const num_elems: usize = 1024;
+        var elems = try alloc.alloc(Elem, num_elems);
+        defer alloc.free(elems);
+
+        var i: usize = 0;
+        var value: usize = 0;
+        while (i < num_elems) : (i += 1) {
+            value = rnd.random().int(u32);
+            elems[i] = .{ .value = value };
+        }
+
+        var h: Heap = .{ .context = {} };
+        for (elems) |*elem| {
+            h.insert(elem);
+        }
+
+        for (elems) |*elem| {
+            h.remove(elem);
+        }
+        try testing.expect(h.deleteMin() == null);
+    }
+}
+
+fn printDotGraph(comptime T: type, root: *T) void {
+    const print = std.debug.print;
+    print("\ndigraph {{\n", .{});
+    printPointers(T, root, null);
+    print("}}\n", .{});
+}
+
+fn printPointers(comptime T: type, e: *T, prev: ?*T) void {
+    const print = std.debug.print;
+    if (prev) |p| {
+        if (e.heap.prev != p) {
+            print("\t{d} -> {d} [label=\"prev missing\"];\n", .{ e.value, p.value });
+            print("\t{d} -> {d} [label=\"prev\"];\n", .{ e.value, e.heap.prev.?.value });
+        }
+    }
+    if (e.heap.child) |c| {
+        print("\t{d} -> {d} [label=\"child\"];\n", .{ e.value, c.value });
+        printPointers(T, c, e);
+    }
+    if (e.heap.next) |n| {
+        print("\t{d} -> {d} [label=\"next\"];\n", .{ e.value, n.value });
+        printPointers(T, n, e);
+    }
+}
+
+test "heap: this was failing in intial implementation" {
+    const Heap = Intrusive(Elem, void, Elem.less);
+
+    var a: Elem = .{ .value = 2 };
+    var b: Elem = .{ .value = 4 };
+    var c: Elem = .{ .value = 5 };
+    var d: Elem = .{ .value = 1 };
+    var e: Elem = .{ .value = 3 };
 
     var h: Heap = .{ .context = {} };
-    for (elems) |*elem| {
-        h.insert(elem);
+    h.insert(&a);
+    h.insert(&b);
+    h.insert(&c);
+    h.insert(&d);
+    h.insert(&e);
+
+    //printDotGraph(Elem, h.root.?);
+
+    try testing.expect(h.deleteMin().?.value == 1);
+    try testing.expect(h.deleteMin().?.value == 2);
+    try testing.expect(h.deleteMin().?.value == 3);
+    try testing.expect(h.deleteMin().?.value == 4);
+    try testing.expect(h.deleteMin().?.value == 5);
+    try testing.expect(h.deleteMin() == null);
+}
+
+test "heap: combine simblings" {
+    const num_elems = 32;
+    var elems: [num_elems]Elem = undefined;
+    for (&elems, 0..) |*elem, i| {
+        elem.* = .{ .value = i };
     }
 
-    var count: usize = 0;
-    var last: usize = 0;
-    while (h.deleteMin()) |elem| {
-        count += 1;
-        try testing.expect(elem.value >= last);
-        last = elem.value;
+    const Heap = Intrusive(Elem, void, Elem.less);
+    var h: Heap = .{ .context = {} };
+
+    // for (&elems) |*elem| {
+    //     h.insert(elem);
+    // }
+
+    var root = elems[0];
+    h.insert(&root);
+
+    var a: *Elem = h.root.?;
+    var n: usize = num_elems - 1;
+    while (n > 0) : (n -= 1) {
+        var b = &elems[n];
+        a.heap.next = b;
+        b.heap.prev = a;
+        a = b;
     }
-    try testing.expect(h.deleteMin() == null);
-    try testing.expect(count == NUM_TIMERS);
+
+    a = h.root.?;
+    a.heap.child = a.heap.next;
+    a.heap.next = null;
+
+    //printDotGraph(Elem, h.root.?);
+    std.debug.print("\n", .{});
+
+    n = 0;
+    while (n < num_elems) : (n += 1) {
+        try testing.expect(h.deleteMin().?.value == n);
+        // if (n == 0)
+        //     printDotGraph(Elem, h.root.?);
+    }
+
+    //try testing.expect(h.deleteMin().?.value == 1);
 }

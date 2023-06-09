@@ -153,20 +153,6 @@ pub fn Intrusive(
 
         /// Combine the siblings of the leftmost value "left" into a single
         /// new rooted with the minimum value.
-        fn combine_siblings_naive(self: *Self, left: *T) *T {
-            var a = left;
-
-            a.heap.prev = null;
-            while (true) {
-                var b = a.heap.next orelse return a;
-                a.heap.next = null;
-                b.heap.prev = null;
-                a = self.meld(a, b);
-            }
-        }
-
-        /// Combine the siblings of the leftmost value "left" into a single
-        /// new rooted with the minimum value.
         fn combine_siblings(self: *Self, left: *T) *T {
             return self.mergePairsLeft(self.mergePairsRight(left));
         }

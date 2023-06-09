@@ -73,7 +73,7 @@ pub fn Intrusive(
             };
 
             // Detach "v" from the tree and clean up any links so it
-            // is as if this node never nexisted. The previous value
+            // is as if this node never existed. The previous value
             // must point to the proper next value and the pointers
             // must all be cleaned up.
             if (v.heap.next) |next| next.heap.prev = prev;
@@ -98,10 +98,12 @@ pub fn Intrusive(
         ///
         /// For example, when melding a new value "v" with an existing
         /// root "root", "v" must always be the first param.
+        ///
+        /// Preserves b next into root next.
+        /// Preserves a prev into root prev.
         fn meld(self: *Self, a: *T, b: *T) *T {
             assert(a.heap.next == null);
             assert(b.heap.prev == null);
-            assert(a.heap.prev == null);
 
             if (less(self.context, a, b)) {
                 // a is new root
@@ -109,47 +111,49 @@ pub fn Intrusive(
                 // previous b next is now a next
                 // previous a child is now b next
 
-                // b.next to a.next
-                if (b.heap.next) |b_next| {
-                    assert(b_next.heap.prev == b);
-                    a.heap.next = b_next;
-                    b_next.heap.prev = a;
-                    b.heap.next = null;
-                }
-
-                // a.child to b.next
-                if (a.heap.child) |a_child| {
-                    assert(a_child.heap.prev == a);
-                    b.heap.next = a_child;
-                    a_child.heap.prev = b;
-                }
-
-                // b to a.child
-                a.heap.child = b;
-                b.heap.prev = a;
-
+                moveNext(b, a); // b.next to a.next
+                makeChild(b, a); // b to a.child
                 return a;
             }
 
+            b.heap.prev = a.heap.prev;
             // b is new root
             // a is child of b
             // previous b child is now a next
+            makeChild(a, b); // a to b.child
+            return b;
+        }
 
+        // move a next to b next
+        fn moveNext(a: *T, b: *T) void {
+            assert(b.heap.next == null);
+            if (a.heap.next) |a_next| {
+                assert(a_next.heap.prev == a);
+                b.heap.next = a_next;
+                a_next.heap.prev = b;
+                a.heap.next = null;
+            }
+        }
+
+        // make a child of b
+        // previous b child is moved to a next
+        fn makeChild(a: *T, b: *T) void {
+            assert(a.heap.next == null);
             // b.child to a.next
             if (b.heap.child) |b_child| {
                 assert(b_child.heap.prev == b);
                 a.heap.next = b_child;
                 b_child.heap.prev = a;
+                // b.heap.child = null; // valid but redundant, changed in the next line
             }
             // a to b.child
             b.heap.child = a;
             a.heap.prev = b;
-            return b;
         }
 
         /// Combine the siblings of the leftmost value "left" into a single
         /// new rooted with the minimum value.
-        fn combine_siblings(self: *Self, left: *T) *T {
+        fn combine_siblings_naive(self: *Self, left: *T) *T {
             var a = left;
 
             a.heap.prev = null;
@@ -161,29 +165,41 @@ pub fn Intrusive(
             }
         }
 
-        fn combine_siblings_original(self: *Self, left: *T) *T {
+        /// Combine the siblings of the leftmost value "left" into a single
+        /// new rooted with the minimum value.
+        fn combine_siblings(self: *Self, left: *T) *T {
+            return self.mergePairsLeft(self.mergePairsRight(left));
+        }
+
+        fn mergePairsRight(self: *Self, left: *T) *T {
             left.heap.prev = null;
 
             // Merge pairs right
-            var root: *T = root: {
+            // Processes and melds siblings in pairs 1-2, 3-4, ...
+            // Every pair has prev pointer leading to previous melded pair root.
+            // Returns right most sibling (odd) or rightmost melded pair (even number of siblings).
+            var right: *T = right: {
                 var a: *T = left;
                 while (true) {
-                    var b = a.heap.next orelse break :root a;
+                    var b = a.heap.next orelse break :right a;
                     a.heap.next = null;
                     b.heap.prev = null;
-                    std.debug.print(":", .{});
-                    b = self.meld(a, b);
-                    a = b.heap.next orelse break :root b;
+                    b = self.meld(a, b); // b next is preseved into b
+                    a = b.heap.next orelse break :right b;
                 }
             };
+            return right;
+        }
 
+        fn mergePairsLeft(self: *Self, right_: *T) *T {
+            var right = right_;
             // Merge pairs left
+            // Follows prev pointers from the rightmost pair and meldes all pairs.
             while (true) {
-                var b = root.heap.prev orelse return root;
+                var b = right.heap.prev orelse return right;
+                right.heap.prev = null;
                 b.heap.next = null;
-                root.heap.prev = null;
-                std.debug.print(";", .{});
-                root = self.meld(b, root);
+                right = self.meld(b, right); // b prev is preserved into right prev
             }
         }
     };
@@ -451,4 +467,55 @@ test "heap: combine simblings" {
     }
 
     //try testing.expect(h.deleteMin().?.value == 1);
+}
+
+// Paper: https://www.cs.cmu.edu/~sleator/papers/pairing-heaps.pdf
+test "heap: example from the paper (fig. 7)" {
+    const Heap = Intrusive(Elem, void, Elem.less);
+    var h: Heap = .{ .context = {} };
+
+    var e1: Elem = .{ .value = 1 };
+    var e2: Elem = .{ .value = 2 };
+    var e3: Elem = .{ .value = 3 };
+    var e4: Elem = .{ .value = 4 };
+    var e5: Elem = .{ .value = 5 };
+    var e6: Elem = .{ .value = 6 };
+    var e8: Elem = .{ .value = 8 };
+    var e10: Elem = .{ .value = 10 };
+
+    // zig fmt: off
+    e1.heap.child = &e3;  e3.heap.prev  = &e1;
+    e3.heap.next  = &e6;  e6.heap.prev  = &e3;
+    e6.heap.next  = &e4;  e4.heap.prev  = &e6;
+    e4.heap.next  = &e2;  e2.heap.prev  = &e4;
+    e2.heap.next  = &e10; e10.heap.prev = &e2;
+    e10.heap.next = &e8;  e8.heap.prev  = &e10;
+    e8.heap.next  = &e5;  e5.heap.prev  = &e8;
+    // zig fmt: on
+
+    var right = h.mergePairsRight(&e3);
+    try testing.expect(e3.heap.prev == null);
+    // test intermediate structure after first step
+    try testing.expect(right.value == 5);
+    try testing.expect(right.heap.child == null);
+    var prev = right.heap.prev.?;
+    try testing.expect(prev.value == 8);
+    try testing.expect(prev.heap.child.?.value == 10);
+    prev = prev.heap.prev.?;
+    try testing.expect(prev.value == 2);
+    try testing.expect(prev.heap.child.?.value == 4);
+    prev = prev.heap.prev.?;
+    try testing.expect(prev.value == 3);
+    try testing.expect(prev.heap.child.?.value == 6);
+    try testing.expect(prev.heap.prev == null);
+
+    var root = h.mergePairsLeft(right);
+    // test resulted structure after both steps
+    try testing.expect(root.value == 2);
+    try testing.expect(root.heap.child.?.value == 3);
+    try testing.expect(root.heap.child.?.heap.child.?.value == 6);
+    try testing.expect(root.heap.child.?.heap.next.?.value == 5);
+    try testing.expect(root.heap.child.?.heap.next.?.heap.next.?.value == 4);
+    try testing.expect(root.heap.child.?.heap.next.?.heap.child.?.value == 8);
+    try testing.expect(root.heap.child.?.heap.next.?.heap.child.?.heap.child.?.value == 10);
 }

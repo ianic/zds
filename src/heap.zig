@@ -194,6 +194,11 @@ pub fn Intrusive(
             return self.mergePairsLeft(self.mergePairsRight(left));
         }
 
+        /// Processes and melds siblings in pairs first-second, third-fourth, ...
+        /// Every pair has prev pointer leading to previous melded pair root.
+        /// Returns right most sibling (odd) or rightmost melded pair (even
+        /// number of siblings).
+        ///
         /// Example of pairing after root(1) deletion.
         /// Root child is 3, 3's first sibling is 4...
         ///
@@ -210,10 +215,6 @@ pub fn Intrusive(
         ///
         inline fn mergePairsRight(self: *Self, left: *T) *T {
             left.heap.prev = null;
-            // Merge pairs right
-            // Processes and melds siblings in pairs 1-2, 3-4, ...
-            // Every pair has prev pointer leading to previous melded pair root.
-            // Returns right most sibling (odd) or rightmost melded pair (even number of siblings).
             var a: *T = left;
             while (true) {
                 var b = a.heap.next orelse return a;
@@ -226,7 +227,7 @@ pub fn Intrusive(
         }
 
         /// Uses heaps from the previous function follows prev pointers from
-        /// right-most and melds into single heap.
+        /// rightmost and melds into single heap.
         ///
         ///    3<-2<-8<-5
         ///   /  /  /
@@ -242,12 +243,10 @@ pub fn Intrusive(
         ///
         inline fn mergePairsLeft(self: *Self, right_: *T) *T {
             var right = right_; // make it mutable
-            // Merge pairs left
-            // Follows prev pointers from the rightmost pair and meldes all pairs.
             while (true) {
                 var b = right.heap.prev orelse return right;
                 right.heap.prev = null;
-                b.heap.next = null;
+                assert(b.heap.next == null); // cleared in mergePairsRight
                 right = self.meld(b, right); // b prev is preserved into right prev
             }
         }

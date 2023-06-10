@@ -99,8 +99,37 @@ pub fn Intrusive(
         /// For example, when melding a new value "v" with an existing
         /// root "root", "v" must always be the first param.
         ///
-        /// Preserves b next into root next.
-        /// Preserves a prev into root prev.
+        /// Preserves B.next into result.next.
+        /// Preserves A.prev into result.prev.
+        ///
+        /// Assumes A.next and B.prev pointers are null.
+        ///
+        ///     ap          :
+        ///     |           |
+        ///     A--:        B--bn
+        ///    /           /
+        ///   ac          bc
+        ///
+        ///  A.value < B.value
+        ///
+        ///         ap
+        ///         |
+        ///         A--bn
+        ///        /
+        ///       B--ac
+        ///      /
+        ///     bc
+        ///
+        ///  A.value >= B.value
+        ///
+        ///         ap
+        ///         |
+        ///         B--bn
+        ///        /
+        ///       A--bc
+        ///      /
+        ///     ac
+        ///
         fn meld(self: *Self, a: *T, b: *T) *T {
             assert(a.heap.next == null);
             assert(b.heap.prev == null);
@@ -195,13 +224,13 @@ pub fn Intrusive(
 /// should be set as the "heap" field in the type T.
 pub fn IntrusiveField(comptime T: type) type {
     return struct {
-        child: ?*T = null,
-        prev: ?*T = null,
-        next: ?*T = null,
+        child: ?*T = null, // child values are not less then the parent value; half-ordered binary tree
+        prev: ?*T = null, // points to parent or previous sibling
+        next: ?*T = null, // next sibling
     };
 }
 
-test "heap" {
+test "heap basic operations" {
     const Heap = Intrusive(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 12 };
@@ -268,8 +297,6 @@ test "heap equal values" {
     h.insert(&b);
     h.insert(&c);
     h.insert(&d);
-
-    //printDotGraph(Elem, h.root.?);
 
     try testing.expect(h.deleteMin().?.value == 1);
     try testing.expect(h.deleteMin().?.value == 2);
@@ -361,31 +388,6 @@ test "heap: remove random values" {
     }
 }
 
-fn printDotGraph(comptime T: type, root: *T) void {
-    const print = std.debug.print;
-    print("\ndigraph {{\n", .{});
-    printPointers(T, root, null);
-    print("}}\n", .{});
-}
-
-fn printPointers(comptime T: type, e: *T, prev: ?*T) void {
-    const print = std.debug.print;
-    if (prev) |p| {
-        if (e.heap.prev != p) {
-            print("\t{d} -> {d} [label=\"prev missing\"];\n", .{ e.value, p.value });
-            print("\t{d} -> {d} [label=\"prev\"];\n", .{ e.value, e.heap.prev.?.value });
-        }
-    }
-    if (e.heap.child) |c| {
-        print("\t{d} -> {d} [label=\"child\"];\n", .{ e.value, c.value });
-        printPointers(T, c, e);
-    }
-    if (e.heap.next) |n| {
-        print("\t{d} -> {d} [label=\"next\"];\n", .{ e.value, n.value });
-        printPointers(T, n, e);
-    }
-}
-
 test "heap: this was failing in intial implementation" {
     const Heap = Intrusive(Elem, void, Elem.less);
 
@@ -402,8 +404,6 @@ test "heap: this was failing in intial implementation" {
     h.insert(&d);
     h.insert(&e);
 
-    //printDotGraph(Elem, h.root.?);
-
     try testing.expect(h.deleteMin().?.value == 1);
     try testing.expect(h.deleteMin().?.value == 2);
     try testing.expect(h.deleteMin().?.value == 3);
@@ -412,7 +412,7 @@ test "heap: this was failing in intial implementation" {
     try testing.expect(h.deleteMin() == null);
 }
 
-test "heap: combine simblings" {
+test "heap: combine siblings" {
     const num_elems = 32;
     var elems: [num_elems]Elem = undefined;
     for (&elems, 0..) |*elem, i| {
@@ -421,10 +421,6 @@ test "heap: combine simblings" {
 
     const Heap = Intrusive(Elem, void, Elem.less);
     var h: Heap = .{ .context = {} };
-
-    // for (&elems) |*elem| {
-    //     h.insert(elem);
-    // }
 
     var root = elems[0];
     h.insert(&root);
@@ -442,17 +438,11 @@ test "heap: combine simblings" {
     a.heap.child = a.heap.next;
     a.heap.next = null;
 
-    //printDotGraph(Elem, h.root.?);
-    std.debug.print("\n", .{});
-
     n = 0;
     while (n < num_elems) : (n += 1) {
         try testing.expect(h.deleteMin().?.value == n);
-        // if (n == 0)
-        //     printDotGraph(Elem, h.root.?);
+        //if (n == 0) printDotGraph(Elem, h.root.?);
     }
-
-    //try testing.expect(h.deleteMin().?.value == 1);
 }
 
 // Paper: https://www.cs.cmu.edu/~sleator/papers/pairing-heaps.pdf
@@ -504,4 +494,29 @@ test "heap: example from the paper (fig. 7)" {
     try testing.expect(root.heap.child.?.heap.next.?.heap.next.?.value == 4);
     try testing.expect(root.heap.child.?.heap.next.?.heap.child.?.value == 8);
     try testing.expect(root.heap.child.?.heap.next.?.heap.child.?.heap.child.?.value == 10);
+}
+
+fn printDotGraph(comptime T: type, root: *T) void {
+    const print = std.debug.print;
+    print("\ndigraph {{\n", .{});
+    printPointers(T, root, null);
+    print("}}\n", .{});
+}
+
+fn printPointers(comptime T: type, e: *T, prev: ?*T) void {
+    const print = std.debug.print;
+    if (prev) |p| {
+        if (e.heap.prev != p) {
+            print("\t{d} -> {d} [label=\"prev missing\"];\n", .{ e.value, p.value });
+            print("\t{d} -> {d} [label=\"prev\"];\n", .{ e.value, e.heap.prev.?.value });
+        }
+    }
+    if (e.heap.child) |c| {
+        print("\t{d} -> {d} [label=\"child\"];\n", .{ e.value, c.value });
+        printPointers(T, c, e);
+    }
+    if (e.heap.next) |n| {
+        print("\t{d} -> {d} [label=\"next\"];\n", .{ e.value, n.value });
+        printPointers(T, n, e);
+    }
 }

@@ -21,7 +21,7 @@ const assert = std.debug.assert;
 ///
 /// [1]: https://en.wikipedia.org/wiki/Pairing_heap
 /// [2]: https://www.boost.org/doc/libs/1_64_0/doc/html/intrusive/intrusive_vs_nontrusive.html
-pub fn Intrusive(
+pub fn PairingHeap(
     comptime T: type,
     comptime Context: type,
     comptime less: *const fn (ctx: Context, a: *T, b: *T) bool,
@@ -255,7 +255,7 @@ pub fn Intrusive(
 
 /// The state that is required for IntrusiveHeap element types. This
 /// should be set as the "heap" field in the type T.
-pub fn IntrusiveField(comptime T: type) type {
+pub fn Field(comptime T: type) type {
     return struct {
         child: ?*T = null, // child values are not less then the parent value; half-ordered binary tree
         prev: ?*T = null, // points to parent or previous sibling
@@ -263,8 +263,21 @@ pub fn IntrusiveField(comptime T: type) type {
     };
 }
 
+const testing = std.testing;
+
+// structure used in tests
+const Elem = struct {
+    const Self = @This();
+    value: usize = 0,
+    heap: Field(Self) = .{},
+    fn less(ctx: void, a: *Self, b: *Self) bool {
+        _ = ctx;
+        return a.value < b.value;
+    }
+};
+
 test "heap basic operations" {
-    const Heap = Intrusive(Elem, void, Elem.less);
+    const Heap = PairingHeap(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 12 };
     var b: Elem = .{ .value = 24 };
@@ -285,7 +298,7 @@ test "heap basic operations" {
 }
 
 test "heap remove root" {
-    const Heap = Intrusive(Elem, void, Elem.less);
+    const Heap = PairingHeap(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 12 };
     var b: Elem = .{ .value = 24 };
@@ -300,7 +313,7 @@ test "heap remove root" {
 }
 
 test "heap remove with children" {
-    const Heap = Intrusive(Elem, void, Elem.less);
+    const Heap = PairingHeap(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 36 };
     var b: Elem = .{ .value = 24 };
@@ -318,7 +331,7 @@ test "heap remove with children" {
 }
 
 test "heap equal values" {
-    const Heap = Intrusive(Elem, void, Elem.less);
+    const Heap = PairingHeap(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 1 };
     var b: Elem = .{ .value = 2 };
@@ -338,18 +351,6 @@ test "heap equal values" {
     try testing.expect(h.deleteMin() == null);
 }
 
-const Elem = struct {
-    const Self = @This();
-    value: usize = 0,
-    heap: IntrusiveField(Self) = .{},
-    fn less(ctx: void, a: *Self, b: *Self) bool {
-        _ = ctx;
-        return a.value < b.value;
-    }
-};
-
-const testing = std.testing;
-
 test "heap: random values" {
     const alloc = testing.allocator;
     const RndGen = std.rand.DefaultPrng;
@@ -358,7 +359,7 @@ test "heap: random values" {
     const num_runs = 1024;
     var runs: usize = 0;
     while (runs < num_runs) : (runs += 1) {
-        const Heap = Intrusive(Elem, void, Elem.less);
+        const Heap = PairingHeap(Elem, void, Elem.less);
 
         const num_elems: usize = 1024;
         var elems = try alloc.alloc(Elem, num_elems);
@@ -396,7 +397,7 @@ test "heap: remove random values" {
     const num_runs = 1024;
     var runs: usize = 0;
     while (runs < num_runs) : (runs += 1) {
-        const Heap = Intrusive(Elem, void, Elem.less);
+        const Heap = PairingHeap(Elem, void, Elem.less);
 
         const num_elems: usize = 1024;
         var elems = try alloc.alloc(Elem, num_elems);
@@ -422,7 +423,7 @@ test "heap: remove random values" {
 }
 
 test "heap: this was failing in intial implementation" {
-    const Heap = Intrusive(Elem, void, Elem.less);
+    const Heap = PairingHeap(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 2 };
     var b: Elem = .{ .value = 4 };
@@ -452,7 +453,7 @@ test "heap: combine siblings" {
         elem.* = .{ .value = i };
     }
 
-    const Heap = Intrusive(Elem, void, Elem.less);
+    const Heap = PairingHeap(Elem, void, Elem.less);
     var h: Heap = .{ .context = {} };
 
     var root = elems[0];
@@ -480,7 +481,7 @@ test "heap: combine siblings" {
 
 // Paper: https://www.cs.cmu.edu/~sleator/papers/pairing-heaps.pdf
 test "heap: example from the paper (fig. 7)" {
-    const Heap = Intrusive(Elem, void, Elem.less);
+    const Heap = PairingHeap(Elem, void, Elem.less);
     var h: Heap = .{ .context = {} };
 
     var e1: Elem = .{ .value = 1 };

@@ -53,16 +53,107 @@ pub fn BinarySearchTree(
             }
         }
 
-        fn walk(self: *Self, comptime cb: *const fn (*T) void) void {
-            nodeWalk(self.root, cb);
+        /// Minimum node in the tree or null if empty.
+        pub fn minimum(self: *Self) ?*T {
+            var n: *T = self.root orelse return null;
+            while (true)
+                n = n.tree.left orelse return n;
         }
 
-        fn nodeWalk(node: ?*T, comptime cb: *const fn (*T) void) void {
+        pub fn minimumFor(n_: *T) *T {
+            var n: *T = n_;
+            while (true)
+                n = n.tree.left orelse return n;
+        }
+
+        /// Maximum node in the tree or null if empty.
+        pub fn maximum(self: *Self) ?*T {
+            var n = self.root orelse return null;
+            while (true)
+                n = n.tree.right orelse return n;
+        }
+
+        /// Search for the node in the tree with the same value as v node.
+        /// Returns node from the tree, v is used in comparison only.
+        pub fn search(self: *Self, v: *T) ?*T {
+            var n: *T = self.root orelse return null;
+            while (true) {
+                if (less(self.context, v, n)) {
+                    n = n.tree.left orelse return null;
+                } else {
+                    if (less(self.context, n, v)) {
+                        n = n.tree.right orelse return null;
+                    } else {
+                        return n; // equal nodes
+                    }
+                }
+            }
+            return n;
+        }
+
+        pub fn walk(
+            self: *Self,
+            comptime WalkContext: type,
+            ctx: *WalkContext,
+            comptime callback: *const fn (*WalkContext, *T) void,
+        ) void {
+            nodeWalk(self.root, WalkContext, ctx, callback);
+        }
+
+        fn nodeWalk(
+            node: ?*T,
+            comptime WalkContext: type,
+            ctx: *WalkContext,
+            comptime callback: *const fn (*WalkContext, *T) void,
+        ) void {
             if (node == null) return;
             const n = node.?;
-            nodeWalk(n.tree.left, cb);
-            cb(n);
-            nodeWalk(n.tree.right, cb);
+            nodeWalk(n.tree.left, WalkContext, ctx, callback);
+            callback(ctx, n);
+            nodeWalk(n.tree.right, WalkContext, ctx, callback);
+        }
+
+        /// Delete node z from tree
+        pub fn delete(self: *Self, z: *T) void {
+            const left = z.tree.left orelse {
+                self.transplant(z, z.tree.right);
+                return;
+            };
+            const right = z.tree.right orelse {
+                self.transplant(z, z.tree.left);
+                return;
+            };
+            if (right.tree.left == null) {
+                self.transplant(z, right);
+                left.tree.prev = right;
+                right.tree.left = left;
+                return;
+            }
+            const y = minimumFor(right);
+            assert(y.tree.left == null);
+            self.transplant(y, y.tree.right);
+            self.transplant(z, y);
+
+            y.tree.left = left;
+            left.tree.prev = y;
+
+            y.tree.right = right;
+            right.tree.prev = y;
+        }
+
+        /// Transplant replaces the subtree rooted at noed u with the subtree
+        /// roted at node v.
+        fn transplant(self: *Self, u: *T, v: ?*T) void {
+            const prev = u.tree.prev orelse {
+                // u was the root, replace it with v
+                self.root = v;
+                return;
+            };
+            if (u == prev.tree.left)
+                prev.tree.left = v
+            else
+                prev.tree.right = v;
+            if (v) |vv| vv.tree.prev = prev;
         }
     };
 }
@@ -91,7 +182,7 @@ const Node = struct {
     }
 };
 
-test "tree basic operations" {
+test "tree basic operations insert/walk" {
     const Tree = BinarySearchTree(Node, void, Node.less);
     var t: Tree = .{ .context = {} };
 
@@ -110,12 +201,30 @@ test "tree basic operations" {
     t.insert(&b);
     t.assertValid(t.root.?);
 
-    const cb = struct {
-        fn wrap(node: *Node) void {
-            std.debug.print("{d}\n", .{node.value});
+    const Context = struct {
+        values: [4]usize = undefined,
+        idx: usize = 0,
+
+        const Self = @This();
+        fn callback(self: *Self, node: *Node) void {
+            self.values[self.idx] = node.value;
+            self.idx += 1;
+            //std.debug.print("{d}\n", .{node.value});
         }
-    }.wrap;
-    t.walk(cb);
+    };
+    var ctx = Context{};
+    t.walk(Context, &ctx, Context.callback);
+    try testing.expectEqualSlices(usize, &[_]usize{ 1, 2, 3, 4 }, &ctx.values);
+
+    try testing.expect(t.minimum().?.value == 1);
+    try testing.expect(t.maximum().?.value == 4);
+
+    var e = Node{ .value = 2 };
+    try testing.expect(t.search(&e).? == &b);
+    e.value = 4;
+    try testing.expect(t.search(&e).? == &d);
+    e.value = 5;
+    try testing.expect(t.search(&e) == null);
 }
 
 test "tree random" {
@@ -143,6 +252,109 @@ test "tree random" {
     }
 
     //printDotGraph(Node, t.root.?);
+}
+
+test "tree delete node" {
+    const Tree = BinarySearchTree(Node, void, Node.less);
+    var t: Tree = .{ .context = {} };
+
+    var q = Node{ .value = 1 };
+    var z = Node{ .value = 3 };
+    var l = Node{ .value = 2 };
+    var r = Node{ .value = 6 };
+    var y = Node{ .value = 4 };
+    var x = Node{ .value = 5 };
+
+    t.insert(&q);
+    t.insert(&z);
+    t.insert(&l);
+    t.insert(&r);
+    t.insert(&y);
+    t.insert(&x);
+
+    // initial
+    //         q
+    //          \
+    //           z
+    //          / \
+    //         l   r
+    //            /
+    //           y
+    //            \
+    //             x
+    //
+    try testing.expect(t.root.? == &q);
+    try testing.expect(q.tree.right.? == &z);
+    try testing.expect(z.tree.left.? == &l);
+    try testing.expect(z.tree.right.? == &r);
+    try testing.expect(r.tree.left.? == &y);
+    try testing.expect(y.tree.right.? == &x);
+    t.assertValid(t.root.?);
+
+    try testing.expect(Tree.minimumFor(&r) == &y);
+    t.delete(&z);
+    //printDotGraph(Node, t.root.?);
+
+    // after deleting z:
+    //         q
+    //          \
+    //           y
+    //          / \
+    //         l   r
+    //            /
+    //           x
+    //
+    try testing.expect(t.root.? == &q);
+    try testing.expect(q.tree.right.? == &y);
+    try testing.expect(y.tree.left.? == &l);
+    try testing.expect(y.tree.right.? == &r);
+    try testing.expect(r.tree.left.? == &x);
+    t.assertValid(t.root.?);
+
+    t.delete(&y);
+    // after deleting y:
+    //         q
+    //          \
+    //           x
+    //          / \
+    //         l   r
+    //
+    try testing.expect(t.root.? == &q);
+    try testing.expect(q.tree.right.? == &x);
+    try testing.expect(x.tree.left.? == &l);
+    try testing.expect(x.tree.right.? == &r);
+
+    t.delete(&x);
+    // after deleting x:
+    //         q
+    //          \
+    //           r
+    //          /
+    //         l
+    //
+    try testing.expect(t.root.? == &q);
+    try testing.expect(q.tree.right.? == &r);
+    try testing.expect(r.tree.left.? == &l);
+
+    t.delete(&r);
+    // after deleting x:
+    //         q
+    //          \
+    //           l
+    //
+    try testing.expect(t.root.? == &q);
+    try testing.expect(q.tree.right.? == &l);
+
+    t.delete(&l);
+    // after deleting x:
+    //         q
+    //
+    try testing.expect(t.root.? == &q);
+    try testing.expect(q.tree.right == null);
+    try testing.expect(q.tree.left == null);
+
+    t.delete(&q);
+    try testing.expect(t.root == null);
 }
 
 fn printDotGraph(comptime T: type, root: *T) void {

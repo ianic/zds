@@ -141,12 +141,13 @@ pub fn BinarySearchTree(
             right.tree.prev = y;
         }
 
-        /// Transplant replaces the subtree rooted at noed u with the subtree
+        /// Transplant replaces the subtree rooted at node u with the subtree
         /// roted at node v.
         fn transplant(self: *Self, u: *T, v: ?*T) void {
             const prev = u.tree.prev orelse {
                 // u was the root, replace it with v
                 self.root = v;
+                if (v) |vv| vv.tree.prev = null;
                 return;
             };
             if (u == prev.tree.left)
@@ -154,6 +155,32 @@ pub fn BinarySearchTree(
             else
                 prev.tree.right = v;
             if (v) |vv| vv.tree.prev = prev;
+        }
+
+        fn printDotGraph(self: *Self) void {
+            const root = self.root orelse return;
+            const print = std.debug.print;
+            print("\ndigraph {{\ngraph [ordering=\"out\"];", .{});
+            printPointers(root);
+            print("}}\n", .{});
+        }
+
+        fn printPointers(n: *T) void {
+            const print = std.debug.print;
+            // if (prev) |p| {
+            //     if (e.tree.prev != p) {
+            //         print("\t{d} -> {d} [label=\"prev missing\"];\n", .{ e.value, p.value });
+            //         print("\t{d} -> {d} [label=\"prev\"];\n", .{ e.value, e.tree.prev.?.value });
+            //     }
+            // }
+            if (n.tree.left) |left| {
+                print("\t{d} -> {d} [label=\"L\"];\n", .{ n.value, left.value });
+                printPointers(left);
+            }
+            if (n.tree.right) |right| {
+                print("\t{d} -> {d} [label=\"R\"];\n", .{ n.value, right.value });
+                printPointers(right);
+            }
         }
     };
 }
@@ -235,23 +262,33 @@ test "tree random" {
     const Tree = BinarySearchTree(Node, void, Node.less);
     var t: Tree = .{ .context = {} };
 
-    const num_nodes: usize = 32;
+    const num_nodes: usize = 1024;
     var elems = try alloc.alloc(Node, num_nodes);
+    var nodes = try alloc.alloc(*Node, num_nodes);
     defer alloc.free(elems);
+    defer alloc.free(nodes);
 
-    var i: usize = 0;
-    //var value: usize = 0;
-    while (i < num_nodes) : (i += 1) {
-        elems[i] = .{ .value = i };
+    for (elems, 0..) |*elem, i| {
+        elem.* = .{ .value = i };
+        nodes[i] = elem;
     }
 
-    rnd.shuffle(Node, elems);
-
-    for (elems) |*elem| {
+    // insert in random order
+    rnd.shuffle(*Node, nodes);
+    for (nodes) |elem| {
         t.insert(elem);
     }
+    t.assertValid(t.root.?);
+    //t.printDotGraph();
 
-    //printDotGraph(Node, t.root.?);
+    // delete in random order
+    rnd.shuffle(*Node, nodes);
+    for (nodes) |elem| {
+        t.assertValid(t.root.?);
+        t.delete(elem);
+    }
+
+    try testing.expect(t.root == null);
 }
 
 test "tree delete node" {
@@ -355,29 +392,4 @@ test "tree delete node" {
 
     t.delete(&q);
     try testing.expect(t.root == null);
-}
-
-fn printDotGraph(comptime T: type, root: *T) void {
-    const print = std.debug.print;
-    print("\ndigraph {{\ngraph [ordering=\"out\"];", .{});
-    printPointers(T, root, null);
-    print("}}\n", .{});
-}
-
-fn printPointers(comptime T: type, e: *T, prev: ?*T) void {
-    const print = std.debug.print;
-    if (prev) |p| {
-        if (e.tree.prev != p) {
-            print("\t{d} -> {d} [label=\"prev missing\"];\n", .{ e.value, p.value });
-            print("\t{d} -> {d} [label=\"prev\"];\n", .{ e.value, e.tree.prev.?.value });
-        }
-    }
-    if (e.tree.left) |c| {
-        print("\t{d} -> {d} [label=\"L\"];\n", .{ e.value, c.value });
-        printPointers(T, c, e);
-    }
-    if (e.tree.right) |n| {
-        print("\t{d} -> {d} [label=\"R\"];\n", .{ e.value, n.value });
-        printPointers(T, n, e);
-    }
 }

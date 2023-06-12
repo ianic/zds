@@ -73,6 +73,12 @@ pub fn BinarySearchTree(
                 n = n.tree.right orelse return n;
         }
 
+        pub fn maximumFor(n_: *T) ?*T {
+            var n: *T = n_;
+            while (true)
+                n = n.tree.right orelse return n;
+        }
+
         pub fn successor(self: *Self, n: *T) ?*T {
             _ = self;
             return successor_(n);
@@ -84,6 +90,23 @@ pub fn BinarySearchTree(
             var prev = n;
             var curr = n.tree.prev orelse return null;
             while (prev == curr.tree.right) {
+                prev = curr;
+                curr = curr.tree.prev orelse return null;
+            }
+            return curr;
+        }
+
+        fn predecessor(self: *Self, n: *T) ?*T {
+            _ = self;
+            return predecessor_(n);
+        }
+
+        fn predecessor_(n: *T) ?*T {
+            if (n.tree.left) |left| return maximumFor(left);
+
+            var prev = n;
+            var curr = n.tree.prev orelse return null;
+            while (prev == curr.tree.left) {
                 prev = curr;
                 curr = curr.tree.prev orelse return null;
             }
@@ -458,7 +481,7 @@ const TestTreeFactory = struct {
     }
 };
 
-test "tree successor" {
+test "tree successor/predecessor" {
     var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
     defer ttf.deinit();
     var tree = ttf.tree;
@@ -473,6 +496,18 @@ test "tree successor" {
     try testing.expect(tree.successor(ttf.node(17)).?.value == 18);
     try testing.expect(tree.successor(ttf.node(18)).?.value == 20);
     try testing.expect(tree.successor(ttf.node(20)) == null);
+
+    try testing.expect(tree.predecessor(ttf.node(2)) == null);
+    try testing.expect(tree.predecessor(ttf.node(3)).?.value == 2);
+    try testing.expect(tree.predecessor(ttf.node(4)).?.value == 3);
+    try testing.expect(tree.predecessor(ttf.node(6)).?.value == 4);
+    try testing.expect(tree.predecessor(ttf.node(7)).?.value == 6);
+    try testing.expect(tree.predecessor(ttf.node(9)).?.value == 7);
+    try testing.expect(tree.predecessor(ttf.node(13)).?.value == 9);
+    try testing.expect(tree.predecessor(ttf.node(15)).?.value == 13);
+    try testing.expect(tree.predecessor(ttf.node(17)).?.value == 15);
+    try testing.expect(tree.predecessor(ttf.node(18)).?.value == 17);
+    try testing.expect(tree.predecessor(ttf.node(20)).?.value == 18);
 }
 
 test "tree iterator" {

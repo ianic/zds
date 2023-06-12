@@ -73,16 +73,21 @@ pub fn BinarySearchTree(
                 n = n.tree.right orelse return n;
         }
 
-        pub fn successor(n: *T) ?*T {
-            if (n.tree.right) |r| return minimumFor(r);
+        pub fn successor(self: *Self, n: *T) ?*T {
+            _ = self;
+            return successor_(n);
+        }
 
-            var y = n.tree.prev;
-            var x = n;
-            while (y != null and x == y.?.tree.right) {
-                x = y.?;
-                y = y.?.tree.prev;
+        fn successor_(n: *T) ?*T {
+            if (n.tree.right) |right| return minimumFor(right);
+
+            var prev = n;
+            var curr = n.tree.prev orelse return null;
+            while (prev == curr.tree.right) {
+                prev = curr;
+                curr = curr.tree.prev orelse return null;
             }
-            return y;
+            return curr;
         }
 
         /// Search for the node in the tree with the same value as v node.
@@ -193,6 +198,20 @@ pub fn BinarySearchTree(
                 print("\t{d} -> {d} [label=\"R\"];\n", .{ n.value, right.value });
                 printPointers(right);
             }
+        }
+
+        const Iterator = struct {
+            curr: ?*T,
+
+            pub fn next(self: *Iterator) ?*T {
+                var curr = self.curr orelse return null;
+                self.curr = successor_(curr);
+                return curr;
+            }
+        };
+
+        pub fn iter(self: *Self) Iterator {
+            return .{ .curr = self.minimum() };
         }
     };
 }
@@ -406,19 +425,66 @@ test "tree delete node" {
     try testing.expect(t.root == null);
 }
 
-test "tree successor" {
+const TestTreeFactory = struct {
     const alloc = testing.allocator;
-    const values = [_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 };
-
     const Tree = BinarySearchTree(Node, void, Node.less);
-    var t: Tree = .{ .context = {} };
 
-    var nodes = try alloc.alloc(Node, values.len);
-    defer alloc.free(nodes);
+    tree: Tree,
+    nodes: []Node,
 
-    for (values, 0..) |v, i| {
-        nodes[i] = .{ .value = v };
-        t.insert(&nodes[i]);
+    fn init(values: []const usize) !TestTreeFactory {
+        var nodes = try alloc.alloc(Node, values.len);
+        var tree = Tree{ .context = {} };
+        for (values, 0..) |v, i| {
+            nodes[i] = .{ .value = v };
+            tree.insert(&nodes[i]);
+        }
+        return .{
+            .nodes = nodes,
+            .tree = tree,
+        };
     }
-    try testing.expect(Tree.successor(&nodes[9]).?.value == 15);
+    fn deinit(self: *TestTreeFactory) void {
+        alloc.free(self.nodes);
+    }
+
+    // returns node with value
+    fn node(self: *TestTreeFactory, value: usize) *Node {
+        for (self.nodes) |*n| {
+            if (n.value == value)
+                return n;
+        }
+        unreachable;
+    }
+};
+
+test "tree successor" {
+    var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    defer ttf.deinit();
+    var tree = ttf.tree;
+    try testing.expect(tree.successor(ttf.node(2)).?.value == 3);
+    try testing.expect(tree.successor(ttf.node(3)).?.value == 4);
+    try testing.expect(tree.successor(ttf.node(4)).?.value == 6);
+    try testing.expect(tree.successor(ttf.node(6)).?.value == 7);
+    try testing.expect(tree.successor(ttf.node(7)).?.value == 9);
+    try testing.expect(tree.successor(ttf.node(9)).?.value == 13);
+    try testing.expect(tree.successor(ttf.node(13)).?.value == 15);
+    try testing.expect(tree.successor(ttf.node(15)).?.value == 17);
+    try testing.expect(tree.successor(ttf.node(17)).?.value == 18);
+    try testing.expect(tree.successor(ttf.node(18)).?.value == 20);
+    try testing.expect(tree.successor(ttf.node(20)) == null);
+}
+
+test "tree iterator" {
+    var values = [_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 };
+    var ttf = try TestTreeFactory.init(&values);
+    defer ttf.deinit();
+    var tree = ttf.tree;
+
+    var iter = tree.iter();
+    std.sort.sort(usize, &values, {}, std.sort.asc(usize));
+    for (values) |v| {
+        try testing.expect(iter.next().?.value == v);
+    }
+    try testing.expect(iter.next() == null);
 }

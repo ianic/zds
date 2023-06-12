@@ -73,6 +73,18 @@ pub fn BinarySearchTree(
                 n = n.tree.right orelse return n;
         }
 
+        pub fn successor(n: *T) ?*T {
+            if (n.tree.right) |r| return minimumFor(r);
+
+            var y = n.tree.prev;
+            var x = n;
+            while (y != null and x == y.?.tree.right) {
+                x = y.?;
+                y = y.?.tree.prev;
+            }
+            return y;
+        }
+
         /// Search for the node in the tree with the same value as v node.
         /// Returns node from the tree, v is used in comparison only.
         pub fn search(self: *Self, v: *T) ?*T {
@@ -392,4 +404,21 @@ test "tree delete node" {
 
     t.delete(&q);
     try testing.expect(t.root == null);
+}
+
+test "tree successor" {
+    const alloc = testing.allocator;
+    const values = [_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 };
+
+    const Tree = BinarySearchTree(Node, void, Node.less);
+    var t: Tree = .{ .context = {} };
+
+    var nodes = try alloc.alloc(Node, values.len);
+    defer alloc.free(nodes);
+
+    for (values, 0..) |v, i| {
+        nodes[i] = .{ .value = v };
+        t.insert(&nodes[i]);
+    }
+    try testing.expect(Tree.successor(&nodes[9]).?.value == 15);
 }

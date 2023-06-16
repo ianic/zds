@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-// Red-black binary search tree from Sedgewick Algorithms.
+// Red-black binary search tree from Sedgewick Algorithms book.
 // BST with read and black *links* satisfying:
 //  * red links lean left
 //  * no node has two red links connected to it
@@ -121,6 +121,38 @@ pub fn RedBlackBST(
             if (n.tree.right) |right| {
                 print("\t{d} -> {d} [label=\"R\" color=\"{s}\"];\n", .{ n.value, right.value, right.tree.colorName() });
                 printPointers(right);
+            }
+        }
+
+        // Check tree structure regarding three rules:
+        //  * root is black
+        //  * red links lean left
+        //  * all leaf nodes have same red link depth
+        // Returns tree depth, number of black links to the leaf.
+        // Must be same for all leaf nodes (checkNode asserts that).
+        fn check(self: *Self) usize {
+            const root = self.root orelse return 0;
+            assert(root.tree.color == .black);
+            var tree_depth: usize = 0;
+            checkNode(root, 0, &tree_depth);
+            return tree_depth;
+        }
+
+        fn checkNode(n: *T, depth: usize, tree_depth: *usize) void {
+            if (n.tree.right) |right| {
+                assert(right.tree.color == .black); // red links only on the left
+                checkNode(right, depth + 1, tree_depth);
+            }
+            if (n.tree.left) |left| {
+                if (left.tree.color == .red)
+                    checkNode(left, depth, tree_depth)
+                else
+                    checkNode(left, depth + 1, tree_depth);
+            }
+            if (n.tree.left == null and n.tree.right == null) { // leaf node
+                if (tree_depth.* == 0)
+                    tree_depth.* = depth; // first leaft sets tree_depth
+                assert(depth == tree_depth.*); // all others must be equal
             }
         }
     };
@@ -340,6 +372,7 @@ test "insert into 3 node at the bottom" {
     try testing.expect(s.tree.color == .black);
     try testing.expect(a.tree.color == .red);
     try testing.expect(r.tree.color == .red);
+    try testing.expect(t.check() == 1);
 
     var h = Node{ .value = 'h' };
     t.insert(&h);
@@ -368,10 +401,12 @@ test "insert into 3 node at the bottom" {
     try testing.expect(h.tree.right == null);
     try testing.expect(a.tree.left == null);
     try testing.expect(a.tree.right == null);
+    try testing.expect(t.check() == 1);
     //t.printDotGraph();
 }
 
-test "insert" {
+test "print dot graph" {
+    if (true) return error.SkipZigTest;
     var ttf = try TestTreeFactory.init(&[_]usize{ 26, 17, 41, 14, 21, 30, 47, 10, 16, 19, 23, 28, 38, 7, 12, 15, 20, 35, 39, 3 });
     defer ttf.deinit();
     var tree = ttf.tree;

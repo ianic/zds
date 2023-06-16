@@ -34,8 +34,8 @@ pub fn RedBlackBST(
                 h.tree.right = self.insert_(h.tree.right, n);
             }
 
-            if (isRed(h.tree.right) and !isRed(h.tree.left)) h = self.leftRotate(h);
-            if (isRedAndLeftRed(h.tree.left)) h = self.rightRotate(h);
+            if (isRed(h.tree.right) and !isRed(h.tree.left)) h = leftRotate(h);
+            if (isRed(h.tree.left) and isRed(h.tree.left.?.tree.left)) h = rightRotate(h);
             if (isRed(h.tree.left) and isRed(h.tree.right)) flipColors(h);
 
             return h;
@@ -46,29 +46,32 @@ pub fn RedBlackBST(
             return false;
         }
 
-        fn isRedAndLeftRed(n_: ?*T) bool {
-            if (n_) |n| {
-                if (n.tree.color == .red) {
-                    if (n.tree.left) |left| {
-                        return left.tree.color == .red;
-                    }
-                }
-            }
-            return false;
-        }
+        /// Flip colors of two red children.
+        ///
+        ///       |                         ||
+        ///       n                          n
+        ///     // \\  --- flipColors -->   / \
+        ///     l   r                      l   r
+        ///
+        ///  // = red       || = red
+        ///   / = black      | = black
+        ///
+        fn flipColors(n: *T) void {
+            assert(n.tree.right.?.tree.color == .red);
+            assert(n.tree.left.?.tree.color == .red);
 
-        fn flipColors(n: *Node) void {
             n.tree.color = .red;
-            if (n.tree.left) |left| left.tree.color = .black;
-            if (n.tree.right) |right| right.tree.color = .black;
+            n.tree.left.?.tree.color = .black;
+            n.tree.right.?.tree.color = .black;
         }
 
-        /// Left rotate x node with its parent (y node)
+        /// Left rotate y node with its parent .x node.
+        /// Right rotate x node with it's parent y node.
         ///
         ///
         ///        |                                      |
         ///        y        <-- leftRotate(x) ---         x
-        ///  red->/ \                                    / \<-red
+        ///      // \                                    / \\
         ///      x   c      --- rightRotate(y) -->      a   y
         ///     / \                                        / \
         ///    a   b                                      b   c
@@ -77,24 +80,11 @@ pub fn RedBlackBST(
         ///  a < x
         ///  c >= y
         ///  y < b >= x
-        fn leftRotate(self: *Self, x: *Node) *Node {
-            const y = x.tree.right orelse return x;
-
-            // y to subtree root
-            y.tree.prev = x.tree.prev;
-            if (x.tree.prev) |x_prev| {
-                if (x_prev.tree.left == x)
-                    x_prev.tree.left = y
-                else
-                    x_prev.tree.right = y;
-            } else {
-                self.root = y;
-            }
+        fn leftRotate(x: *T) *T {
+            const y = x.tree.right.?;
+            assert(y.tree.color == .red);
 
             x.tree.right = y.tree.left;
-            if (y.tree.left) |b| b.tree.prev = x;
-
-            x.tree.prev = y;
             y.tree.left = x;
 
             y.tree.color = x.tree.color;
@@ -102,28 +92,12 @@ pub fn RedBlackBST(
             return y;
         }
 
-        fn rightRotate(self: *Self, y: *Node) *Node {
-            const x = y.tree.left orelse return y;
+        fn rightRotate(y: *T) *T {
+            const x = y.tree.left.?;
+            assert(x.tree.color == .red);
 
-            // x to subtree root
-            x.tree.prev = y.tree.prev;
-            if (y.tree.prev) |y_prev| {
-                if (y_prev.tree.left == y)
-                    y_prev.tree.left = x
-                else
-                    y_prev.tree.right = x;
-            } else {
-                self.root = x;
-            }
-
-            // b to y right
             y.tree.left = x.tree.right;
-            if (x.tree.right) |b|
-                b.tree.prev = y;
-
-            // y to x right
             x.tree.right = y;
-            y.tree.prev = x;
 
             x.tree.color = y.tree.color;
             y.tree.color = .red;
@@ -169,7 +143,6 @@ pub fn Field(comptime T: type) type {
     return struct {
         left: ?*T = null,
         right: ?*T = null,
-        prev: ?*T = null,
         color: Color = .red, // color of link from parent to this node
 
         fn colorName(self: *@This()) []const u8 {
@@ -190,20 +163,11 @@ const Node = struct {
         _ = ctx;
         return a.value < b.value;
     }
-
-    fn setLeft(self: *Self, n: *Node) void {
-        self.tree.left = n;
-        n.tree.prev = self;
-    }
-    fn setRight(self: *Self, n: *Node) void {
-        self.tree.right = n;
-        n.tree.prev = self;
-    }
 };
 
 test "left/right rotate" {
-    const Rbt = RedBlackBST(Node, void, Node.less);
-    var t: Rbt = .{ .context = {} };
+    const Tree = RedBlackBST(Node, void, Node.less);
+    var t: Tree = .{ .context = {} };
 
     var x = Node{ .value = 2 };
     var y = Node{ .value = 4 };
@@ -216,13 +180,13 @@ test "left/right rotate" {
     x.tree.color = .black;
     y.tree.color = .red;
 
-    y.setLeft(&b);
-    y.setRight(&c);
-    x.setLeft(&a);
-    x.setRight(&y);
+    y.tree.left = &b;
+    y.tree.right = &c;
+    x.tree.left = &a;
+    x.tree.right = &y;
     t.root = &x;
 
-    _ = t.leftRotate(&x);
+    t.root = Tree.leftRotate(&x);
 
     try testing.expect(t.root == &y);
     try testing.expect(y.tree.right == &c);
@@ -232,7 +196,7 @@ test "left/right rotate" {
     try testing.expect(x.tree.color == .red);
     try testing.expect(y.tree.color == .black);
 
-    _ = t.rightRotate(&y);
+    t.root = Tree.rightRotate(&y);
 
     try testing.expect(t.root == &x);
     try testing.expect(x.tree.left == &a);

@@ -28,14 +28,14 @@ pub fn RedBlackBST(
         fn insert_(self: *Self, h_: ?*T, n: *T) *T {
             var h = h_ orelse return n;
 
-            if (less(self.context, h, n)) {
+            if (less(self.context, n, h)) {
                 h.tree.left = self.insert_(h.tree.left, n);
             } else {
                 h.tree.right = self.insert_(h.tree.right, n);
             }
 
-            if (isRed(h.tree.right) and !isRed(h.tree.left)) h = self.rightRotate(h);
-            if (isRedAndLeftBlack(h)) h = self.rightRotate(h);
+            if (isRed(h.tree.right) and !isRed(h.tree.left)) h = self.leftRotate(h);
+            if (isRedAndLeftRed(h.tree.left)) h = self.rightRotate(h);
             if (isRed(h.tree.left) and isRed(h.tree.right)) flipColors(h);
 
             return h;
@@ -46,11 +46,11 @@ pub fn RedBlackBST(
             return false;
         }
 
-        fn isRedAndLeftBlack(n_: ?*T) bool {
+        fn isRedAndLeftRed(n_: ?*T) bool {
             if (n_) |n| {
                 if (n.tree.color == .red) {
                     if (n.tree.left) |left| {
-                        return left.tree.color == .black;
+                        return left.tree.color == .red;
                     }
                 }
             }
@@ -66,12 +66,12 @@ pub fn RedBlackBST(
         /// Left rotate x node with its parent (y node)
         ///
         ///
-        ///     |                                      |
-        ///     y        <-- leftRotate(x) ---         x
-        ///    / \                                    / \
-        ///   x   c      --- rightRotate(y) -->      a   y
-        ///  / \                                        / \
-        /// a   b                                      b   c
+        ///        |                                      |
+        ///        y        <-- leftRotate(x) ---         x
+        ///  red->/ \                                    / \<-red
+        ///      x   c      --- rightRotate(y) -->      a   y
+        ///     / \                                        / \
+        ///    a   b                                      b   c
         ///
         ///  y >= x
         ///  a < x
@@ -243,4 +243,45 @@ test "left/right rotate" {
     try testing.expect(y.tree.color == .red);
 
     //t.printDotGraph();
+}
+
+const TestTreeFactory = struct {
+    const alloc = testing.allocator;
+    const Tree = RedBlackBST(Node, void, Node.less);
+
+    tree: Tree,
+    nodes: []Node,
+
+    fn init(values: []const usize) !TestTreeFactory {
+        var nodes = try alloc.alloc(Node, values.len);
+        var tree = Tree{ .context = {} };
+        for (values, 0..) |v, i| {
+            nodes[i] = .{ .value = v };
+            tree.insert(&nodes[i]);
+        }
+        return .{
+            .nodes = nodes,
+            .tree = tree,
+        };
+    }
+    fn deinit(self: *TestTreeFactory) void {
+        alloc.free(self.nodes);
+    }
+
+    // returns node with value
+    fn node(self: *TestTreeFactory, value: usize) *Node {
+        for (self.nodes) |*n| {
+            if (n.value == value)
+                return n;
+        }
+        unreachable;
+    }
+};
+
+test "insert" {
+    var ttf = try TestTreeFactory.init(&[_]usize{ 26, 17, 41, 14, 21, 30, 47, 10, 16, 19, 23, 28, 38, 7, 12, 15, 20, 35, 39, 3 });
+    defer ttf.deinit();
+    var tree = ttf.tree;
+
+    tree.printDotGraph();
 }

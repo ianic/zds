@@ -287,28 +287,7 @@ test "insert" {
 }
 
 test "insert2" {
-    var ttf = try TestTreeFactory.init(&[_]usize{
-        26,
-        17,
-        41,
-        14,
-        21,
-        30,
-        47,
-        10,
-        16,
-        19,
-        23,
-        28,
-        38,
-        7,
-        12,
-        15,
-        20,
-        35,
-        39,
-        3,
-    });
+    var ttf = try TestTreeFactory.init(&[_]usize{ 26, 17, 41, 14, 21, 30, 47, 10, 16, 19, 23, 28, 38, 7, 12, 15, 20, 35, 39, 3 });
     defer ttf.deinit();
     var tree = ttf.tree;
 

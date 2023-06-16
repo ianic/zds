@@ -242,6 +242,135 @@ const TestTreeFactory = struct {
     }
 };
 
+test "insert into single 3 node case 1 larger" {
+    const Tree = RedBlackBST(Node, void, Node.less);
+    var t: Tree = .{ .context = {} };
+
+    var a = Node{ .value = 1 };
+    var b = Node{ .value = 2 };
+    t.insert(&a);
+    t.insert(&b);
+    try testing.expect(t.root.? == &b);
+    try testing.expect(b.tree.color == .black);
+    try testing.expect(a.tree.color == .red);
+    try testing.expect(b.tree.left == &a);
+
+    var c = Node{ .value = 3 };
+    t.insert(&c);
+    try testing.expect(t.root.? == &b);
+    try testing.expect(a.tree.color == .black);
+    try testing.expect(b.tree.color == .black);
+    try testing.expect(c.tree.color == .black);
+    try testing.expect(b.tree.left == &a);
+    try testing.expect(b.tree.right == &c);
+}
+
+test "insert into single 3 node case 2 smaller" {
+    const Tree = RedBlackBST(Node, void, Node.less);
+    var t: Tree = .{ .context = {} };
+
+    var b = Node{ .value = 2 };
+    var c = Node{ .value = 3 };
+    t.insert(&b);
+    t.insert(&c);
+    try testing.expect(t.root.? == &c);
+    try testing.expect(c.tree.color == .black);
+    try testing.expect(b.tree.color == .red);
+    try testing.expect(c.tree.left == &b);
+
+    var a = Node{ .value = 1 };
+    t.insert(&a);
+    try testing.expect(t.root.? == &b);
+    try testing.expect(a.tree.color == .black);
+    try testing.expect(b.tree.color == .black);
+    try testing.expect(c.tree.color == .black);
+    try testing.expect(b.tree.left == &a);
+    try testing.expect(b.tree.right == &c);
+}
+
+test "insert into single 3 node case 3 between" {
+    const Tree = RedBlackBST(Node, void, Node.less);
+    var t: Tree = .{ .context = {} };
+
+    var a = Node{ .value = 1 };
+    var c = Node{ .value = 3 };
+    t.insert(&a);
+    t.insert(&c);
+    try testing.expect(t.root.? == &c);
+    try testing.expect(c.tree.color == .black);
+    try testing.expect(a.tree.color == .red);
+    try testing.expect(c.tree.left == &a);
+
+    var b = Node{ .value = 2 };
+    t.insert(&b);
+    try testing.expect(t.root.? == &b);
+    try testing.expect(a.tree.color == .black);
+    try testing.expect(b.tree.color == .black);
+    try testing.expect(c.tree.color == .black);
+    try testing.expect(b.tree.left == &a);
+    try testing.expect(b.tree.right == &c);
+}
+
+test "insert into 3 node at the bottom" {
+    const Tree = RedBlackBST(Node, void, Node.less);
+    var t: Tree = .{ .context = {} };
+
+    var e = Node{ .value = 'e' };
+    var c = Node{ .value = 'c' };
+    var a = Node{ .value = 'a' };
+    var s = Node{ .value = 's' };
+    var r = Node{ .value = 'r' };
+    t.insert(&c);
+    t.insert(&e);
+    t.insert(&s);
+    t.insert(&r);
+    t.insert(&a);
+    //       e
+    //      / \
+    //     c   s
+    //    //  //
+    //   a    r
+    try testing.expect(t.root.? == &e);
+    try testing.expect(e.tree.left == &c);
+    try testing.expect(e.tree.right == &s);
+    try testing.expect(c.tree.left == &a);
+    try testing.expect(s.tree.left == &r);
+    try testing.expect(e.tree.color == .black);
+    try testing.expect(c.tree.color == .black);
+    try testing.expect(s.tree.color == .black);
+    try testing.expect(a.tree.color == .red);
+    try testing.expect(r.tree.color == .red);
+
+    var h = Node{ .value = 'h' };
+    t.insert(&h);
+    //       r
+    //      //\
+    //     e   s
+    //    / \
+    //   c   h
+    //  //
+    //  a
+    try testing.expect(t.root.? == &r);
+    try testing.expect(r.tree.left == &e);
+    try testing.expect(r.tree.right == &s);
+    try testing.expect(e.tree.left == &c);
+    try testing.expect(e.tree.right == &h);
+    try testing.expect(c.tree.left == &a);
+    try testing.expect(r.tree.color == .black);
+    try testing.expect(s.tree.color == .black);
+    try testing.expect(e.tree.color == .red);
+    try testing.expect(c.tree.color == .black);
+    try testing.expect(h.tree.color == .black);
+    try testing.expect(a.tree.color == .red);
+    try testing.expect(s.tree.left == null);
+    try testing.expect(s.tree.right == null);
+    try testing.expect(h.tree.left == null);
+    try testing.expect(h.tree.right == null);
+    try testing.expect(a.tree.left == null);
+    try testing.expect(a.tree.right == null);
+    //t.printDotGraph();
+}
+
 test "insert" {
     var ttf = try TestTreeFactory.init(&[_]usize{ 26, 17, 41, 14, 21, 30, 47, 10, 16, 19, 23, 28, 38, 7, 12, 15, 20, 35, 39, 3 });
     defer ttf.deinit();

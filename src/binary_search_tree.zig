@@ -1,11 +1,17 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const CompareResult = enum {
+    less,
+    equal,
+    greater,
+};
+
 pub fn BinarySearchTree(
     comptime K: type, // key data type
     comptime T: type, // value data type
     comptime Context: type,
-    comptime less: *const fn (ctx: Context, a: K, b: K) bool,
+    comptime compare: *const fn (ctx: Context, a: K, b: K) CompareResult,
 ) type {
     return struct {
         /// Node inside the tree wrapping the actual data.
@@ -23,13 +29,56 @@ pub fn BinarySearchTree(
         root: ?*Node = null,
         context: Context,
 
+        /// Inserts a new `Node` into the tree, returning the previous one, if any.
+        pub fn fetchPut(self: *Self, n: *Node) ?*Node {
+            var x: *Node = self.root orelse {
+                self.root = n;
+                return null;
+            };
+            while (true) {
+                x = switch (compare(self.context, n.key, x.key)) {
+                    .less => x.left orelse {
+                        x.left = n;
+                        return null;
+                    },
+                    .greater => x.right orelse {
+                        x.right = n;
+                        return null;
+                    },
+                    .equal => {
+                        replace(x, n);
+                        return x;
+                    },
+                };
+            }
+        }
+
+        /// Replace old node  o with new n.
+        /// Old is removed from the tree.
+        fn replace(o: *Node, n: *Node) void {
+            n.left = o.left;
+            n.right = o.right;
+            n.prev = o.prev;
+            if (o.prev) |prev| {
+                if (prev.left == o)
+                    prev.left = n
+                else
+                    prev.right = n;
+            }
+            if (o.left) |left| left.prev = n;
+            if (o.right) |right| right.prev = n;
+            o.left = null;
+            o.right = null;
+            o.prev = null;
+        }
+
         pub fn insert(self: *Self, n: *Node) void {
             var leaf = self.leafFor(n) orelse {
                 self.root = n;
                 return;
             };
             n.prev = leaf;
-            if (less(self.context, n.key, leaf.key)) {
+            if (compare(self.context, n.key, leaf.key) == .less) {
                 leaf.left = n;
             } else {
                 leaf.right = n;
@@ -41,7 +90,7 @@ pub fn BinarySearchTree(
         fn leafFor(self: *Self, n: *Node) ?*Node {
             var x: *Node = self.root orelse return null;
             while (true) {
-                x = if (less(self.context, n.key, x.key))
+                x = if (compare(self.context, n.key, x.key) == .less)
                     x.left orelse return x
                 else
                     x.right orelse return x;
@@ -54,12 +103,12 @@ pub fn BinarySearchTree(
         fn assertInvariants(self: *Self, node: *Node) void {
             if (node.left) |left| {
                 assert(left.prev == node);
-                assert(less(self.context, left.key, node.key));
+                assert(compare(self.context, left.key, node.key) == .less);
                 self.assertInvariants(left);
             }
             if (node.right) |right| {
                 assert(right.prev == node);
-                assert(!less(self.context, right.key, node.key));
+                assert(compare(self.context, right.key, node.key) == .greater);
                 self.assertInvariants(right);
             }
         }
@@ -129,10 +178,10 @@ pub fn BinarySearchTree(
         pub fn search(self: *Self, v: *Node) ?*Node {
             var n: *Node = self.root orelse return null;
             while (true) {
-                if (less(self.context, v.key, n.key)) {
+                if (compare(self.context, v.key, n.key)) {
                     n = n.left orelse return null;
                 } else {
-                    if (less(self.context, n.key, v.key)) {
+                    if (compare(self.context, n.key, v.key)) {
                         n = n.right orelse return null;
                     } else {
                         return n; // equal nodes
@@ -247,21 +296,24 @@ pub fn BinarySearchTree(
 const testing = std.testing;
 
 // Less comparison for usize used in tests
-fn testLess(ctx: void, a: usize, b: usize) bool {
+fn testLess(ctx: void, a: usize, b: usize) CompareResult {
     _ = ctx;
-    return a < b;
+    if (a < b) return .less;
+    if (a > b) return .greater;
+    return .equal;
 }
 
 // Produces test tree from the []const usize
 const TestTreeFactory = struct {
     const alloc = testing.allocator;
     const Tree = BinarySearchTree(usize, void, void, testLess);
+    const Node = Tree.Node;
 
     tree: Tree,
-    nodes: []Tree.Node,
+    nodes: []Node,
 
     fn init(values: []const usize) !TestTreeFactory {
-        var nodes = try alloc.alloc(Tree.Node, values.len);
+        var nodes = try alloc.alloc(Node, values.len);
         var tree = Tree{ .context = {} };
         for (values, 0..) |v, i| {
             nodes[i] = .{ .key = v, .data = {} };
@@ -272,12 +324,13 @@ const TestTreeFactory = struct {
             .tree = tree,
         };
     }
+
     fn deinit(self: *TestTreeFactory) void {
         alloc.free(self.nodes);
     }
 
     // Returns node by key
-    fn find(self: *TestTreeFactory, key: usize) *Tree.Node {
+    fn find(self: *TestTreeFactory, key: usize) *Node {
         for (self.nodes) |*n| {
             if (n.key == key)
                 return n;
@@ -498,4 +551,22 @@ test "tree iterator" {
         try testing.expect(iter.next().?.key == v);
     }
     try testing.expect(iter.next() == null);
+}
+
+test "fetchPut" {
+    var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    defer ttf.deinit();
+    var tree = ttf.tree;
+    const Node = TestTreeFactory.Node;
+
+    var n8 = Node{ .key = 16, .data = {} }; // does not exists
+    try testing.expect(tree.fetchPut(&n8) == null);
+
+    var n6 = Node{ .key = 6, .data = {} }; // already exists in the tree
+
+    // putting existing node returns old with that key
+    const o6 = tree.fetchPut(&n6).?;
+    try testing.expect(o6.key == 6);
+    try testing.expect(o6 != &n6);
+    //tree.printDotGraph();
 }

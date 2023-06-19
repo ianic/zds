@@ -7,6 +7,10 @@ const CompareResult = enum {
     greater,
 };
 
+const Error = error{
+    KeyExists,
+};
+
 pub fn BinarySearchTree(
     comptime K: type, // key data type
     comptime T: type, // value data type
@@ -30,7 +34,19 @@ pub fn BinarySearchTree(
         context: Context,
 
         /// Inserts a new `Node` into the tree, returning the previous one, if any.
+        /// If node with the same key if found it is replaced with n and the previous is returned.
+        /// So the caller has chance to deinit unused node.
+        /// If key don't exists returns null.
         pub fn fetchPut(self: *Self, n: *Node) ?*Node {
+            if (self.fetchPut_(n)) |x| {
+                replace(x, n);
+                return x;
+            }
+            return null;
+        }
+
+        //  Inserts node n into tree or returns existing one with the same key.
+        fn fetchPut_(self: *Self, n: *Node) ?*Node {
             var x: *Node = self.root orelse {
                 self.root = n;
                 return null;
@@ -46,14 +62,22 @@ pub fn BinarySearchTree(
                         return null;
                     },
                     .equal => {
-                        replace(x, n);
                         return x;
                     },
                 };
             }
         }
 
-        /// Replace old node  o with new n.
+        /// Puts new node into tree if that key not exists.
+        /// If the key is already in the tree returns error.
+        pub fn putNoClobber(self: *Self, n: *Node) Error!void {
+            if (self.fetchPut_(n)) |x| {
+                assert(x.key == n.key);
+                return Error.KeyExists;
+            }
+        }
+
+        /// Replace old node o with new n.
         /// Old is removed from the tree.
         fn replace(o: *Node, n: *Node) void {
             n.left = o.left;
@@ -67,9 +91,38 @@ pub fn BinarySearchTree(
             }
             if (o.left) |left| left.prev = n;
             if (o.right) |right| right.prev = n;
-            o.left = null;
-            o.right = null;
-            o.prev = null;
+            clearPointers(o);
+        }
+
+        fn clearPointers(n: *Node) void {
+            n.left = null;
+            n.right = null;
+            n.prev = null;
+        }
+
+        /// Get node by the key.
+        /// Null if there is no node for that key.
+        pub fn get(self: *Self, key: K) ?*Node {
+            var x: *Node = self.root orelse {
+                return null;
+            };
+            while (true) {
+                x = switch (compare(self.context, key, x.key)) {
+                    .less => x.left orelse {
+                        return null;
+                    },
+                    .greater => x.right orelse {
+                        return null;
+                    },
+                    .equal => {
+                        return x;
+                    },
+                };
+            }
+        }
+
+        pub fn contains(self: *Self, key: K) bool {
+            return self.get(key) != null;
         }
 
         pub fn insert(self: *Self, n: *Node) void {
@@ -173,24 +226,6 @@ pub fn BinarySearchTree(
             return curr;
         }
 
-        /// Search for the node in the tree with the same value as v node.
-        /// Returns node from the tree, v is used in comparison only.
-        pub fn search(self: *Self, v: *Node) ?*Node {
-            var n: *Node = self.root orelse return null;
-            while (true) {
-                if (compare(self.context, v.key, n.key)) {
-                    n = n.left orelse return null;
-                } else {
-                    if (compare(self.context, n.key, v.key)) {
-                        n = n.right orelse return null;
-                    } else {
-                        return n; // equal nodes
-                    }
-                }
-            }
-            return n;
-        }
-
         pub fn walk(
             self: *Self,
             comptime WalkContext: type,
@@ -213,18 +248,30 @@ pub fn BinarySearchTree(
             nodeWalk(n.right, WalkContext, ctx, callback);
         }
 
-        /// Delete node z from tree
-        pub fn delete(self: *Self, z: *Node) void {
-            const left = z.left orelse {
-                self.transplant(z, z.right);
+        /// Remove node with key from the tree.
+        /// Returns node so caller can deinit it.
+        /// Returns null if key not in the tree.
+        pub fn fetchRemove(self: *Self, key: K) ?*Node {
+            if (self.get(key)) |n| {
+                self.remove(n);
+                return n;
+            }
+            return null;
+        }
+
+        /// Remove node n from tree by giving node pointer.
+        pub fn remove(self: *Self, n: *Node) void {
+            defer clearPointers(n);
+            const left = n.left orelse {
+                self.transplant(n, n.right);
                 return;
             };
-            const right = z.right orelse {
-                self.transplant(z, z.left);
+            const right = n.right orelse {
+                self.transplant(n, n.left);
                 return;
             };
             if (right.left == null) {
-                self.transplant(z, right);
+                self.transplant(n, right);
                 left.prev = right;
                 right.left = left;
                 return;
@@ -232,7 +279,7 @@ pub fn BinarySearchTree(
             const y = minimumFor(right);
             assert(y.left == null);
             self.transplant(y, y.right);
-            self.transplant(z, y);
+            self.transplant(n, y);
 
             y.left = left;
             left.prev = y;
@@ -257,23 +304,27 @@ pub fn BinarySearchTree(
             if (v) |vv| vv.prev = prev;
         }
 
-        fn printDotGraph(self: *Self) void {
+        /// Print graphviz (dot) representation of the tree
+        /// Example; call printDotGraph from test, remove stderr and create dot file from the stdout:
+        /// zig test --test-filter fetchRemove binary_search_tree.zig 2>/dev/null > tree.dot
+        fn printDotGraph(self: *Self) !void {
             const root = self.root orelse return;
-            const print = std.debug.print;
-            print("\ndigraph {{\ngraph [ordering=\"out\"];", .{});
-            printPointers(root);
-            print("}}\n", .{});
+            const stdout = std.io.getStdOut().writer();
+
+            try stdout.print("\ndigraph {{\n\tgraph [ordering=\"out\"];\n", .{});
+            try printPointers(root);
+            try stdout.print("}}\n", .{});
         }
 
-        fn printPointers(n: *Node) void {
-            const print = std.debug.print;
+        fn printPointers(n: *Node) !void {
+            const stdout = std.io.getStdOut().writer();
             if (n.left) |left| {
-                print("\t{d} -> {d} [label=\"L\" color=\"red\"];\n", .{ n.key, left.key });
-                printPointers(left);
+                try stdout.print("\t{d} -> {d} [label=\"L\" color=\"red\"];\n", .{ n.key, left.key });
+                try printPointers(left);
             }
             if (n.right) |right| {
-                print("\t{d} -> {d} [label=\"R\" color=\"blue\"];\n", .{ n.key, right.key });
-                printPointers(right);
+                try stdout.print("\t{d} -> {d} [label=\"R\" color=\"blue\"];\n", .{ n.key, right.key });
+                try printPointers(right);
             }
         }
 
@@ -330,7 +381,7 @@ const TestTreeFactory = struct {
     }
 
     // Returns node by key
-    fn find(self: *TestTreeFactory, key: usize) *Node {
+    fn node(self: *TestTreeFactory, key: usize) *Node {
         for (self.nodes) |*n| {
             if (n.key == key)
                 return n;
@@ -400,7 +451,7 @@ test "random insert/delete" {
     rnd.shuffle(*Tree.Node, nodes);
     for (nodes) |n| {
         t.assertInvariants(t.root.?);
-        t.delete(n);
+        t.remove(n);
     }
 
     try testing.expect(t.root == null);
@@ -444,7 +495,7 @@ test "tree delete node" {
     t.assertInvariants(t.root.?);
 
     try testing.expect(Tree.minimumFor(&r) == &y);
-    t.delete(&z);
+    t.remove(&z);
     //printDotGraph(Node, t.root.?);
 
     // after deleting z:
@@ -463,7 +514,7 @@ test "tree delete node" {
     try testing.expect(r.left.? == &x);
     t.assertInvariants(t.root.?);
 
-    t.delete(&y);
+    t.remove(&y);
     // after deleting y:
     //         q
     //          \
@@ -476,7 +527,7 @@ test "tree delete node" {
     try testing.expect(x.left.? == &l);
     try testing.expect(x.right.? == &r);
 
-    t.delete(&x);
+    t.remove(&x);
     // after deleting x:
     //         q
     //          \
@@ -488,7 +539,7 @@ test "tree delete node" {
     try testing.expect(q.right.? == &r);
     try testing.expect(r.left.? == &l);
 
-    t.delete(&r);
+    t.remove(&r);
     // after deleting x:
     //         q
     //          \
@@ -497,7 +548,7 @@ test "tree delete node" {
     try testing.expect(t.root.? == &q);
     try testing.expect(q.right.? == &l);
 
-    t.delete(&l);
+    t.remove(&l);
     // after deleting x:
     //         q
     //
@@ -505,7 +556,7 @@ test "tree delete node" {
     try testing.expect(q.right == null);
     try testing.expect(q.left == null);
 
-    t.delete(&q);
+    t.remove(&q);
     try testing.expect(t.root == null);
 }
 
@@ -513,29 +564,29 @@ test "tree successor/predecessor" {
     var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
     defer ttf.deinit();
     var tree = ttf.tree;
-    try testing.expect(tree.successor(ttf.find(2)).?.key == 3);
-    try testing.expect(tree.successor(ttf.find(3)).?.key == 4);
-    try testing.expect(tree.successor(ttf.find(4)).?.key == 6);
-    try testing.expect(tree.successor(ttf.find(6)).?.key == 7);
-    try testing.expect(tree.successor(ttf.find(7)).?.key == 9);
-    try testing.expect(tree.successor(ttf.find(9)).?.key == 13);
-    try testing.expect(tree.successor(ttf.find(13)).?.key == 15);
-    try testing.expect(tree.successor(ttf.find(15)).?.key == 17);
-    try testing.expect(tree.successor(ttf.find(17)).?.key == 18);
-    try testing.expect(tree.successor(ttf.find(18)).?.key == 20);
-    try testing.expect(tree.successor(ttf.find(20)) == null);
+    try testing.expect(tree.successor(ttf.node(2)).?.key == 3);
+    try testing.expect(tree.successor(ttf.node(3)).?.key == 4);
+    try testing.expect(tree.successor(ttf.node(4)).?.key == 6);
+    try testing.expect(tree.successor(ttf.node(6)).?.key == 7);
+    try testing.expect(tree.successor(ttf.node(7)).?.key == 9);
+    try testing.expect(tree.successor(ttf.node(9)).?.key == 13);
+    try testing.expect(tree.successor(ttf.node(13)).?.key == 15);
+    try testing.expect(tree.successor(ttf.node(15)).?.key == 17);
+    try testing.expect(tree.successor(ttf.node(17)).?.key == 18);
+    try testing.expect(tree.successor(ttf.node(18)).?.key == 20);
+    try testing.expect(tree.successor(ttf.node(20)) == null);
 
-    try testing.expect(tree.predecessor(ttf.find(2)) == null);
-    try testing.expect(tree.predecessor(ttf.find(3)).?.key == 2);
-    try testing.expect(tree.predecessor(ttf.find(4)).?.key == 3);
-    try testing.expect(tree.predecessor(ttf.find(6)).?.key == 4);
-    try testing.expect(tree.predecessor(ttf.find(7)).?.key == 6);
-    try testing.expect(tree.predecessor(ttf.find(9)).?.key == 7);
-    try testing.expect(tree.predecessor(ttf.find(13)).?.key == 9);
-    try testing.expect(tree.predecessor(ttf.find(15)).?.key == 13);
-    try testing.expect(tree.predecessor(ttf.find(17)).?.key == 15);
-    try testing.expect(tree.predecessor(ttf.find(18)).?.key == 17);
-    try testing.expect(tree.predecessor(ttf.find(20)).?.key == 18);
+    try testing.expect(tree.predecessor(ttf.node(2)) == null);
+    try testing.expect(tree.predecessor(ttf.node(3)).?.key == 2);
+    try testing.expect(tree.predecessor(ttf.node(4)).?.key == 3);
+    try testing.expect(tree.predecessor(ttf.node(6)).?.key == 4);
+    try testing.expect(tree.predecessor(ttf.node(7)).?.key == 6);
+    try testing.expect(tree.predecessor(ttf.node(9)).?.key == 7);
+    try testing.expect(tree.predecessor(ttf.node(13)).?.key == 9);
+    try testing.expect(tree.predecessor(ttf.node(15)).?.key == 13);
+    try testing.expect(tree.predecessor(ttf.node(17)).?.key == 15);
+    try testing.expect(tree.predecessor(ttf.node(18)).?.key == 17);
+    try testing.expect(tree.predecessor(ttf.node(20)).?.key == 18);
 }
 
 test "tree iterator" {
@@ -559,8 +610,8 @@ test "fetchPut" {
     var tree = ttf.tree;
     const Node = TestTreeFactory.Node;
 
-    var n8 = Node{ .key = 16, .data = {} }; // does not exists
-    try testing.expect(tree.fetchPut(&n8) == null);
+    var n16 = Node{ .key = 16, .data = {} }; // does not exists
+    try testing.expect(tree.fetchPut(&n16) == null);
 
     var n6 = Node{ .key = 6, .data = {} }; // already exists in the tree
 
@@ -568,5 +619,44 @@ test "fetchPut" {
     const o6 = tree.fetchPut(&n6).?;
     try testing.expect(o6.key == 6);
     try testing.expect(o6 != &n6);
-    //tree.printDotGraph();
+
+    // putNoClobber of existing node returns error
+    var n9 = Node{ .key = 9, .data = {} }; // already exists in the tree
+    try testing.expect(tree.putNoClobber(&n9) == Error.KeyExists);
+
+    // putNoClobber when that key don't exists
+    var n8 = Node{ .key = 8, .data = {} };
+    try tree.putNoClobber(&n8);
+}
+
+test "get/contains" {
+    var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    defer ttf.deinit();
+    var tree = ttf.tree;
+
+    try testing.expect(tree.get(0) == null);
+    try testing.expect(tree.get(13).? == ttf.node(13));
+    try testing.expect(tree.get(18).? == ttf.node(18));
+
+    try testing.expect(!tree.contains(0));
+    try testing.expect(tree.contains(13));
+    try testing.expect(tree.contains(17));
+}
+
+test "remove/fetchRemove" {
+    var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    defer ttf.deinit();
+    var tree = ttf.tree;
+    try testing.expect(tree.root.?.left.?.key == 6);
+
+    try testing.expect(tree.fetchRemove(0) == null);
+
+    const n6 = tree.fetchRemove(6).?;
+    try testing.expect(n6.key == 6);
+    try testing.expect(n6.prev == null);
+    try testing.expect(n6.left == null);
+    try testing.expect(n6.right == null);
+    tree.assertInvariants(tree.root.?);
+
+    try testing.expect(tree.root.?.left.?.key == 7);
 }

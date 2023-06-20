@@ -32,6 +32,7 @@ pub fn BinarySearchTree(
 
         root: ?*Node = null,
         context: Context,
+        node_count: usize = 0,
 
         /// Inserts a new `Node` into the tree, returning the previous one, if any.
         /// If node with the same key if found it is replaced with n and the previous is returned.
@@ -47,17 +48,23 @@ pub fn BinarySearchTree(
 
         //  Inserts node n into tree or returns existing one with the same key.
         fn fetchPut_(self: *Self, n: *Node) ?*Node {
+            assert(n.left == null and n.right == null and n.prev == null);
             var x: *Node = self.root orelse {
+                self.node_count = 1;
                 self.root = n;
                 return null;
             };
             while (true) {
                 x = switch (compare(self.context, n.key, x.key)) {
                     .less => x.left orelse {
+                        self.node_count += 1;
+                        n.prev = x;
                         x.left = n;
                         return null;
                     },
                     .greater => x.right orelse {
+                        self.node_count += 1;
+                        n.prev = x;
                         x.right = n;
                         return null;
                     },
@@ -125,17 +132,8 @@ pub fn BinarySearchTree(
             return self.get(key) != null;
         }
 
-        pub fn insert(self: *Self, n: *Node) void {
-            var leaf = self.leafFor(n) orelse {
-                self.root = n;
-                return;
-            };
-            n.prev = leaf;
-            if (compare(self.context, n.key, leaf.key) == .less) {
-                leaf.left = n;
-            } else {
-                leaf.right = n;
-            }
+        pub fn count(self: *Self) usize {
+            return self.node_count;
         }
 
         /// Finds leaf node for inserting node n.
@@ -261,7 +259,9 @@ pub fn BinarySearchTree(
 
         /// Remove node n from tree by giving node pointer.
         pub fn remove(self: *Self, n: *Node) void {
+            assert(self.root.? == n or (n.left != null or n.right != null or n.prev != null));
             defer clearPointers(n);
+            self.node_count -= 1;
             const left = n.left orelse {
                 self.transplant(n, n.right);
                 return;
@@ -368,7 +368,7 @@ const TestTreeFactory = struct {
         var tree = Tree{ .context = {} };
         for (values, 0..) |v, i| {
             nodes[i] = .{ .key = v, .data = {} };
-            tree.insert(&nodes[i]);
+            tree.putNoClobber(&nodes[i]) catch unreachable;
         }
         return .{
             .nodes = nodes,
@@ -399,14 +399,19 @@ test "tree insert" {
     var c = Tree.Node{ .key = 3, .data = {} };
     var d = Tree.Node{ .key = 4, .data = {} };
 
+    try testing.expect(t.count() == 0);
     try testing.expect(t.leafFor(&a) == null);
-    t.insert(&c);
+    try t.putNoClobber(&c);
+    try testing.expect(t.count() == 1);
     try testing.expect(t.leafFor(&b) == &c);
-    t.insert(&a);
+    try t.putNoClobber(&a);
+    try testing.expect(t.count() == 2);
     try testing.expect(t.leafFor(&b) == &a);
-    t.insert(&d);
+    try t.putNoClobber(&d);
+    try testing.expect(t.count() == 3);
     try testing.expect(t.leafFor(&b) == &a);
-    t.insert(&b);
+    try t.putNoClobber(&b);
+    try testing.expect(t.count() == 4);
     t.assertInvariants(t.root.?);
 
     try testing.expect(t.root == &c);
@@ -442,7 +447,7 @@ test "random insert/delete" {
     // insert in random order
     rnd.shuffle(*Tree.Node, nodes);
     for (nodes) |n| {
-        t.insert(n);
+        try t.putNoClobber(n);
     }
     t.assertInvariants(t.root.?);
     //t.printDotGraph();
@@ -468,12 +473,12 @@ test "tree delete node" {
     var y = Tree.Node{ .key = 4, .data = {} };
     var x = Tree.Node{ .key = 5, .data = {} };
 
-    t.insert(&q);
-    t.insert(&z);
-    t.insert(&l);
-    t.insert(&r);
-    t.insert(&y);
-    t.insert(&x);
+    try t.putNoClobber(&q);
+    try t.putNoClobber(&z);
+    try t.putNoClobber(&l);
+    try t.putNoClobber(&r);
+    try t.putNoClobber(&y);
+    try t.putNoClobber(&x);
 
     // initial
     //         q
@@ -493,6 +498,7 @@ test "tree delete node" {
     try testing.expect(r.left.? == &y);
     try testing.expect(y.right.? == &x);
     t.assertInvariants(t.root.?);
+    try testing.expect(t.count() == 6);
 
     try testing.expect(Tree.minimumFor(&r) == &y);
     t.remove(&z);
@@ -513,6 +519,7 @@ test "tree delete node" {
     try testing.expect(y.right.? == &r);
     try testing.expect(r.left.? == &x);
     t.assertInvariants(t.root.?);
+    try testing.expect(t.count() == 5);
 
     t.remove(&y);
     // after deleting y:
@@ -526,6 +533,7 @@ test "tree delete node" {
     try testing.expect(q.right.? == &x);
     try testing.expect(x.left.? == &l);
     try testing.expect(x.right.? == &r);
+    try testing.expect(t.count() == 4);
 
     t.remove(&x);
     // after deleting x:
@@ -538,6 +546,7 @@ test "tree delete node" {
     try testing.expect(t.root.? == &q);
     try testing.expect(q.right.? == &r);
     try testing.expect(r.left.? == &l);
+    try testing.expect(t.count() == 3);
 
     t.remove(&r);
     // after deleting x:
@@ -547,6 +556,7 @@ test "tree delete node" {
     //
     try testing.expect(t.root.? == &q);
     try testing.expect(q.right.? == &l);
+    try testing.expect(t.count() == 2);
 
     t.remove(&l);
     // after deleting x:
@@ -555,9 +565,11 @@ test "tree delete node" {
     try testing.expect(t.root.? == &q);
     try testing.expect(q.right == null);
     try testing.expect(q.left == null);
+    try testing.expect(t.count() == 1);
 
     t.remove(&q);
     try testing.expect(t.root == null);
+    try testing.expect(t.count() == 0);
 }
 
 test "tree successor/predecessor" {

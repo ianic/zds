@@ -46,6 +46,15 @@ pub fn BinarySearchTree(
             return null;
         }
 
+        /// Puts new node into tree if that key not exists.
+        /// If the key is already in the tree returns error.
+        pub fn putNoClobber(self: *Self, n: *Node) Error!void {
+            if (self.fetchPut_(n)) |x| {
+                assert(x.key == n.key);
+                return Error.KeyExists;
+            }
+        }
+
         //  Inserts node n into tree or returns existing one with the same key.
         fn fetchPut_(self: *Self, n: *Node) ?*Node {
             assert(n.left == null and n.right == null and n.prev == null);
@@ -72,15 +81,6 @@ pub fn BinarySearchTree(
                         return x;
                     },
                 };
-            }
-        }
-
-        /// Puts new node into tree if that key not exists.
-        /// If the key is already in the tree returns error.
-        pub fn putNoClobber(self: *Self, n: *Node) Error!void {
-            if (self.fetchPut_(n)) |x| {
-                assert(x.key == n.key);
-                return Error.KeyExists;
             }
         }
 
@@ -166,9 +166,7 @@ pub fn BinarySearchTree(
 
         /// Minimum node in the tree or null if empty.
         pub fn minimum(self: *Self) ?*Node {
-            var n: *Node = self.root orelse return null;
-            while (true)
-                n = n.left orelse return n;
+            return minimumFor(self.root orelse return null);
         }
 
         pub fn minimumFor(n_: *Node) *Node {
@@ -179,9 +177,7 @@ pub fn BinarySearchTree(
 
         /// Maximum node in the tree or null if empty.
         pub fn maximum(self: *Self) ?*Node {
-            var n = self.root orelse return null;
-            while (true)
-                n = n.right orelse return n;
+            return maximumFor(self.root orelse return null);
         }
 
         pub fn maximumFor(n_: *Node) ?*Node {
@@ -289,7 +285,7 @@ pub fn BinarySearchTree(
         }
 
         /// Transplant replaces the subtree rooted at node u with the subtree
-        /// roted at node v.
+        /// rooted at node v.
         fn transplant(self: *Self, u: *Node, v: ?*Node) void {
             const prev = u.prev orelse {
                 // u was the root, replace it with v
@@ -338,6 +334,8 @@ pub fn BinarySearchTree(
             }
         };
 
+        /// Returns tree nodes iterator.
+        /// Nodes are iterated in ascending key order.
         pub fn iter(self: *Self) Iterator {
             return .{ .curr = self.minimum() };
         }

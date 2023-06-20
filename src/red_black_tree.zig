@@ -1,94 +1,183 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const CompareResult = @import("binary_search_tree.zig").CompareResult;
+
+const Error = error{
+    KeyExists,
+};
 
 pub fn RedBlackTree(
-    comptime T: type,
+    comptime K: type, // key data type
+    comptime T: type, // value data type
     comptime Context: type,
-    comptime less: *const fn (ctx: Context, a: *T, b: *T) bool,
+    comptime compare: *const fn (ctx: Context, a: K, b: K) CompareResult,
 ) type {
     return struct {
+        const Color = enum {
+            red,
+            black,
+        };
+
+        /// Node inside the tree wrapping the actual data.
+        pub const Node = struct {
+            prev: ?*Node = null,
+            left: ?*Node = null,
+            right: ?*Node = null,
+            color: Color = .red,
+
+            key: K,
+            data: T,
+        };
+
         const Self = @This();
 
-        root: ?*T = null,
+        root: ?*Node = null,
         context: Context,
+        node_count: usize = 0,
 
-        pub fn insert(self: *Self, n: *T) void {
-            defer self.insertFixup(n);
-            n.tree.color = .red;
-            var leaf = self.leafFor(n) orelse {
-                self.root = n;
-                return;
-            };
-            n.tree.prev = leaf;
-            if (less(self.context, n, leaf)) {
-                leaf.tree.left = n;
-            } else {
-                leaf.tree.right = n;
+        /// Inserts a new `Node` into the tree, returning the previous one, if any.
+        /// If node with the same key if found it is replaced with n and the previous is returned.
+        /// So the caller has chance to deinit unused node.
+        /// If key don't exists returns null.
+        pub fn fetchPut(self: *Self, n: *Node) ?*Node {
+            if (self.fetchPut_(n)) |x| {
+                replace(x, n);
+                return x;
+            }
+            return null;
+        }
+
+        /// Puts new node into tree if that key not exists.
+        /// If the key is already in the tree returns error.
+        pub fn putNoClobber(self: *Self, n: *Node) Error!void {
+            if (self.fetchPut_(n)) |x| {
+                assert(x.key == n.key);
+                return Error.KeyExists;
             }
         }
 
-        fn insertFixup(self: *Self, n: *T) void {
+        //  Inserts node n into tree or returns existing one with the same key.
+        fn fetchPut_(self: *Self, n: *Node) ?*Node {
+            assert(n.left == null and n.right == null and n.prev == null and n.color == .red);
+            var x: *Node = self.root orelse {
+                self.node_count = 1;
+                n.color = .black;
+                self.root = n;
+                return null;
+            };
+            while (true) {
+                x = switch (compare(self.context, n.key, x.key)) {
+                    .less => x.left orelse {
+                        self.node_count += 1;
+                        n.prev = x;
+                        x.left = n;
+                        self.putBalance(n);
+                        return null;
+                    },
+                    .greater => x.right orelse {
+                        self.node_count += 1;
+                        n.prev = x;
+                        x.right = n;
+                        self.putBalance(n);
+                        return null;
+                    },
+                    .equal => {
+                        return x;
+                    },
+                };
+            }
+        }
+
+        /// Replace old node o with new n.
+        /// Old is removed from the tree.
+        fn replace(o: *Node, n: *Node) void {
+            n.left = o.left;
+            n.right = o.right;
+            n.prev = o.prev;
+            n.color = o.color;
+            if (o.prev) |prev| {
+                if (prev.left == o)
+                    prev.left = n
+                else
+                    prev.right = n;
+            }
+            if (o.left) |left| left.prev = n;
+            if (o.right) |right| right.prev = n;
+            clearPointers(o);
+        }
+
+        fn clearPointers(n: *Node) void {
+            n.left = null;
+            n.right = null;
+            n.prev = null;
+            n.color = .red;
+        }
+
+        /// Balance tree after putting node n.
+        fn putBalance(self: *Self, n: *Node) void {
             var z = n;
             while (true) {
-                const p = z.tree.prev orelse break; // n is root
-                if (p.tree.color == .black) break;
-                const pp = p.tree.prev orelse break; // n is depth 1
-                if (p == pp.tree.left) {
-                    const y = pp.tree.right orelse unreachable; // TODO
-                    if (y.tree.color == .red) {
-                        p.tree.color = .black;
-                        y.tree.color = .black;
-                        pp.tree.color = .red;
-                        z = pp;
-                        continue;
+                const p = z.prev orelse break; // n is root
+                if (p.color == .black) break;
+                const pp = p.prev orelse break; // n is depth 1
+                if (p == pp.left) {
+                    if (pp.right) |y| {
+                        if (y.color == .red) {
+                            p.color = .black;
+                            y.color = .black;
+                            pp.color = .red;
+                            z = pp;
+                            continue;
+                        }
                     }
-                    if (z == p.tree.right) {
+                    if (z == p.right) {
                         z = p;
                         self.leftRotate(z);
                     }
-                    if (z.tree.prev) |zp| {
-                        zp.tree.color = .black;
-                        if (zp.tree.prev) |zpp| {
-                            zpp.tree.color = .red;
+                    if (z.prev) |zp| {
+                        zp.color = .black;
+                        if (zp.prev) |zpp| {
+                            zpp.color = .red;
                             self.rightRotate(zpp);
                         }
                     }
                 } else {
-                    const y = pp.tree.left orelse unreachable; // TODO
-                    if (y.tree.color == .red) {
-                        p.tree.color = .black;
-                        y.tree.color = .black;
-                        pp.tree.color = .red;
-                        z = pp;
-                        continue;
+                    if (pp.left) |y| {
+                        if (y.color == .red) {
+                            p.color = .black;
+                            y.color = .black;
+                            pp.color = .red;
+                            z = pp;
+                            continue;
+                        }
                     }
-                    if (z == p.tree.left) {
+                    if (z == p.left) {
                         z = p;
                         self.rightRotate(z);
                     }
-                    if (z.tree.prev) |zp| {
-                        zp.tree.color = .black;
-                        if (p.tree.prev) |zpp| {
-                            zpp.tree.color = .red;
+                    if (z.prev) |zp| {
+                        zp.color = .black;
+                        if (zp.prev) |zpp| {
+                            zpp.color = .red;
                             self.leftRotate(zpp);
                         }
                     }
                 }
             }
-            if (self.root) |root| root.tree.color = .black;
+            if (self.root) |root| root.color = .black;
         }
 
-        /// Finds leaf node for inserting node n.
-        /// null if tree is empty, n should be root.
-        fn leafFor(self: *Self, n: *T) ?*T {
-            var x: *T = self.root orelse return null;
-            while (true) {
-                x = if (less(self.context, n, x))
-                    x.tree.left orelse return x
-                else
-                    x.tree.right orelse return x;
-            }
-        }
+        // /// Finds leaf node for inserting node n.
+        // /// null if tree is empty, n should be root.
+        // fn leafFor(self: *Self, n: *Node) ?*Node {
+        //     var x: *T = self.root orelse return null;
+        //     while (true) {
+        //         x = if (less(self.context, n, x))
+        //             x.left orelse return x
+        //         else
+        //             x.right orelse return x;
+        //     }
+        // }
 
         /// Left rotate x node with its parent (y node)
         ///
@@ -102,162 +191,178 @@ pub fn RedBlackTree(
         ///
         ///
         fn leftRotate(self: *Self, x: *Node) void {
-            const y = x.tree.right orelse return;
+            const y = x.right.?;
 
             // y to subtree root
-            y.tree.prev = x.tree.prev;
-            if (x.tree.prev) |x_prev| {
-                if (x_prev.tree.left == x)
-                    x_prev.tree.left = y
+            y.prev = x.prev;
+            if (x.prev) |x_prev| {
+                if (x_prev.left == x)
+                    x_prev.left = y
                 else
-                    x_prev.tree.right = y;
+                    x_prev.right = y;
             } else {
                 self.root = y;
             }
 
-            x.tree.right = y.tree.left;
-            if (y.tree.left) |b| b.tree.prev = x;
+            x.right = y.left;
+            if (y.left) |b| b.prev = x;
 
-            x.tree.prev = y;
-            y.tree.left = x;
+            x.prev = y;
+            y.left = x;
         }
 
         fn rightRotate(self: *Self, y: *Node) void {
-            const x = y.tree.left orelse return;
+            const x = y.left.?;
 
             // x to subtree root
-            x.tree.prev = y.tree.prev;
-            if (y.tree.prev) |y_prev| {
-                if (y_prev.tree.left == y)
-                    y_prev.tree.left = x
+            x.prev = y.prev;
+            if (y.prev) |y_prev| {
+                if (y_prev.left == y)
+                    y_prev.left = x
                 else
-                    y_prev.tree.right = x;
+                    y_prev.right = x;
             } else {
                 self.root = x;
             }
 
             // b to y right
-            y.tree.left = x.tree.right;
-            if (x.tree.right) |b|
-                b.tree.prev = y;
+            y.left = x.right;
+            if (x.right) |b| b.prev = y;
 
             // y to x right
-            x.tree.right = y;
-            y.tree.prev = x;
+            x.right = y;
+            y.prev = x;
         }
 
-        fn printDotGraph(self: *Self) void {
+        /// Assert red black tree invariants:
+        ///   - root is black
+        ///   - if node is red both children are black
+        ///   - for each leaf node black depth (number of black nodes above) are the same
+        fn assertInvariants(self: *Self) usize {
+            const root = self.root orelse return 0;
+            assert(root.color == .black);
+            var tree_depth: usize = 0; // number of black nodes to the each leaf
+            self.assertNodeInvariants(root, 0, &tree_depth);
+            return tree_depth;
+        }
+
+        fn assertNodeInvariants(self: *Self, node: *Node, depth_: usize, tree_depth: *usize) void {
+            var depth = depth_;
+            if (node.color == .black)
+                depth += 1;
+            if (node.left) |left| {
+                if (node.color == .red) // if node is red both children must be black
+                    assert(left.color == .black);
+                assert(left.prev == node);
+                assert(compare(self.context, left.key, node.key) == .less);
+                self.assertNodeInvariants(left, depth, tree_depth);
+            }
+            if (node.right) |right| {
+                if (node.color == .red) // if node is red both children must be black
+                    assert(right.color == .black);
+                assert(right.prev == node);
+                assert(compare(self.context, right.key, node.key) == .greater);
+                self.assertNodeInvariants(right, depth, tree_depth);
+            }
+            if (node.right == null and node.left == null) { // leaf node
+                if (tree_depth.* == 0) // first leaf sets tree_depth
+                    tree_depth.* = depth;
+                assert(depth == tree_depth.*); // all other asserts same tree depth
+            }
+        }
+
+        fn printDotGraph(self: *Self) !void {
             const root = self.root orelse return;
-            const print = std.debug.print;
-            print("\ndigraph {{\ngraph [ordering=\"out\"];", .{});
-            printPointers(root);
-            print("}}\n", .{});
+            const stdout = std.io.getStdOut().writer();
+
+            try stdout.print("\ndigraph {{\n\tgraph [ordering=\"out\"];\n", .{});
+            try printPointers(root);
+            try stdout.print("}}\n", .{});
         }
 
-        fn printPointers(n: *T) void {
-            const print = std.debug.print;
-            if (n.tree.color == .red)
-                print("\t{d} [color=\"red\"];\n", .{n.value})
+        fn printPointers(n: *Node) !void {
+            const stdout = std.io.getStdOut().writer();
+            if (n.color == .red)
+                try stdout.print("\t{d} [color=\"red\"];\n", .{n.key})
             else
-                print("\t{d} [color=\"black\"];\n", .{n.value});
-            if (n.tree.left) |left| {
-                print("\t{d} -> {d} [label=\"L\"];\n", .{ n.value, left.value });
-                printPointers(left);
+                try stdout.print("\t{d} [color=\"black\"];\n", .{n.key});
+            if (n.left) |left| {
+                try stdout.print("\t{d} -> {d} [label=\"L\"];\n", .{ n.key, left.key });
+                try printPointers(left);
             }
-            if (n.tree.right) |right| {
-                print("\t{d} -> {d} [label=\"R\"];\n", .{ n.value, right.value });
-                printPointers(right);
+            if (n.right) |right| {
+                try stdout.print("\t{d} -> {d} [label=\"R\"];\n", .{ n.key, right.key });
+                try printPointers(right);
             }
         }
-    };
-}
-
-const Color = enum {
-    red,
-    black,
-};
-
-/// This should be set as the "tree" field in the type T.
-pub fn Field(comptime T: type) type {
-    return struct {
-        left: ?*T = null,
-        right: ?*T = null,
-        prev: ?*T = null,
-        color: Color = .red,
     };
 }
 
 const testing = std.testing;
 
-// structure used in tests
-const Node = struct {
-    const Self = @This();
-    value: usize = 0,
-    tree: Field(Self) = .{},
-
-    fn less(ctx: void, a: *Self, b: *Self) bool {
-        _ = ctx;
-        return a.value < b.value;
-    }
-
-    fn setLeft(self: *Self, n: *Node) void {
-        self.tree.left = n;
-        n.tree.prev = self;
-    }
-    fn setRight(self: *Self, n: *Node) void {
-        self.tree.right = n;
-        n.tree.prev = self;
-    }
-};
+fn testCompare(ctx: void, a: usize, b: usize) CompareResult {
+    _ = ctx;
+    if (a < b) return .less;
+    if (a > b) return .greater;
+    return .equal;
+}
 
 test "left/right rotate" {
-    const Rbt = RedBlackTree(Node, void, Node.less);
-    var t: Rbt = .{ .context = {} };
+    const Tree = RedBlackTree(usize, void, void, testCompare);
+    const Node = Tree.Node;
+    var t: Tree = .{ .context = {} };
 
-    var x = Node{ .value = 1 };
-    var y = Node{ .value = 2 };
-    var a = Node{ .value = 3 };
-    var b = Node{ .value = 4 };
-    var c = Node{ .value = 5 };
+    var x = Node{ .key = 1, .data = {} };
+    var y = Node{ .key = 2, .data = {} };
+    var a = Node{ .key = 3, .data = {} };
+    var b = Node{ .key = 4, .data = {} };
+    var c = Node{ .key = 5, .data = {} };
 
-    y.setLeft(&b);
-    y.setRight(&c);
-    x.setLeft(&a);
-    x.setRight(&y);
+    y.left = &b;
+    b.prev = &y;
+    y.right = &c;
+    c.prev = &y;
+    x.left = &a;
+    a.prev = &x;
+    x.right = &y;
+    y.prev = &x;
     t.root = &x;
 
     t.leftRotate(&x);
 
     try testing.expect(t.root == &y);
-    try testing.expect(y.tree.right == &c);
-    try testing.expect(y.tree.left == &x);
-    try testing.expect(x.tree.left == &a);
-    try testing.expect(x.tree.right == &b);
+    try testing.expect(y.right == &c);
+    try testing.expect(y.left == &x);
+    try testing.expect(x.left == &a);
+    try testing.expect(x.right == &b);
 
     t.rightRotate(&y);
 
     try testing.expect(t.root == &x);
-    try testing.expect(x.tree.left == &a);
-    try testing.expect(x.tree.right == &y);
-    try testing.expect(y.tree.left == &b);
-    try testing.expect(y.tree.right == &c);
+    try testing.expect(x.left == &a);
+    try testing.expect(x.right == &y);
+    try testing.expect(y.left == &b);
+    try testing.expect(y.right == &c);
 
     //t.printDotGraph();
 }
 
 const TestTreeFactory = struct {
     const alloc = testing.allocator;
-    const Tree = RedBlackTree(Node, void, Node.less);
+    const Tree = RedBlackTree(usize, void, void, testCompare);
+    const Node = Tree.Node;
 
     tree: Tree,
     nodes: []Node,
 
-    fn init(values: []const usize) !TestTreeFactory {
-        var nodes = try alloc.alloc(Node, values.len);
+    fn init(keys: []const usize) !TestTreeFactory {
+        var nodes = try alloc.alloc(Node, keys.len);
         var tree = Tree{ .context = {} };
-        for (values, 0..) |v, i| {
-            nodes[i] = .{ .value = v };
-            tree.insert(&nodes[i]);
+        for (keys, 0..) |v, i| {
+            nodes[i] = .{ .key = v, .data = {} };
+            var n = &nodes[i];
+            tree.putNoClobber(n) catch unreachable;
+            _ = tree.assertInvariants();
         }
         return .{
             .nodes = nodes,
@@ -268,28 +373,29 @@ const TestTreeFactory = struct {
         alloc.free(self.nodes);
     }
 
-    // returns node with value
-    fn node(self: *TestTreeFactory, value: usize) *Node {
+    // returns node with key
+    fn node(self: *TestTreeFactory, key: usize) *Node {
         for (self.nodes) |*n| {
-            if (n.value == value)
+            if (n.key == key)
                 return n;
         }
         unreachable;
     }
 };
 
-test "insert" {
-    var ttf = try TestTreeFactory.init(&[_]usize{ 11, 2, 14, 1, 7, 15, 5, 8, 4 });
-    defer ttf.deinit();
-    var tree = ttf.tree;
+test "rbt random create" {
+    var dp = std.rand.DefaultPrng.init(0);
+    var rnd = dp.random();
 
-    tree.printDotGraph();
-}
+    var keys = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 };
 
-test "insert2" {
-    var ttf = try TestTreeFactory.init(&[_]usize{ 26, 17, 41, 14, 21, 30, 47, 10, 16, 19, 23, 28, 38, 7, 12, 15, 20, 35, 39, 3 });
-    defer ttf.deinit();
-    var tree = ttf.tree;
-
-    tree.printDotGraph();
+    for (0..1024) |_| {
+        var ttf = try TestTreeFactory.init(&keys);
+        defer ttf.deinit();
+        var tree = ttf.tree;
+        try testing.expect(tree.assertInvariants() == 3);
+        // if (i == 0)
+        //     try tree.printDotGraph();
+        rnd.shuffle(usize, &keys);
+    }
 }

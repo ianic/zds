@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const CompareResult = enum {
+pub const CompareResult = enum {
     less,
     equal,
     greater,

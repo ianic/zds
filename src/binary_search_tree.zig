@@ -306,7 +306,7 @@ pub fn BinarySearchTree(
 
         /// Print graphviz (dot) representation of the tree
         /// Example; call printDotGraph from test, remove stderr and create dot file from the stdout:
-        /// zig test --test-filter fetchRemove binary_search_tree.zig 2>/dev/null > tree.dot
+        /// $ zig test --test-filter fetchRemove binary_search_tree.zig 2>/dev/null > tree.dot
         fn printDotGraph(self: *Self) !void {
             const root = self.root orelse return;
             const stdout = std.io.getStdOut().writer();

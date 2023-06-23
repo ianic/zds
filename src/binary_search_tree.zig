@@ -26,6 +26,72 @@ pub fn BinarySearchTree(
 
             key: K,
             data: T,
+
+            // Minimum in this node subtree.
+            pub fn minimum(self: *Node) *Node {
+                var n: *Node = self;
+                while (true)
+                    n = n.left orelse return n;
+            }
+
+            // Maximum in this node subtree.
+            pub fn maximum(self: *Node) *Node {
+                var n: *Node = self;
+                while (true)
+                    n = n.right orelse return n;
+            }
+
+            // Returns next node in ascending order.
+            // Or null if node is last in tree ascending order.
+            pub fn successor(self: *Node) ?*Node {
+                // If the node has right edge next is minimum of its right subtree.
+                if (self.right) |right| return right.minimum();
+
+                // Go up all right edges.
+                // Everything on the right is bigger so going up on the right edge gives smaller node.
+                // Loop until found left edge to the parent and return that parent as next.
+                var curr = self;
+                while (true) {
+                    var prev = curr.prev orelse return null; // reached root, root.prev == null
+                    if (curr == prev.left) return prev; // reached prev from left edge => prev is bigger
+                    curr = prev;
+                }
+            }
+
+            fn predecessor(self: *Node) ?*Node {
+                if (self.left) |left| return left.maximum();
+
+                var curr = self;
+                while (true) {
+                    var prev = curr.prev orelse return null;
+                    if (curr == prev.right) return prev;
+                    curr = prev;
+                }
+            }
+
+            // Returns next node for preorder tree walk.
+            // Preorder tree walk visits root before any subtree.
+            fn preoderNext(self: *Node) ?*Node {
+                var curr = self;
+                if (curr.left) |left| return left;
+                if (curr.right) |right| return right;
+
+                while (true) {
+                    var prev = curr.prev orelse return null;
+                    if (curr == prev.left) {
+                        if (prev.right) |right| return right;
+                        curr = prev;
+                    }
+                    curr = prev;
+                }
+            }
+
+            // Clears node pointers. Node is no more member of a tree.
+            fn clear(self: *Node) void {
+                self.left = null;
+                self.right = null;
+                self.prev = null;
+            }
         };
 
         const Self = @This();
@@ -98,13 +164,7 @@ pub fn BinarySearchTree(
             }
             if (o.left) |left| left.prev = n;
             if (o.right) |right| right.prev = n;
-            clearPointers(o);
-        }
-
-        fn clearPointers(n: *Node) void {
-            n.left = null;
-            n.right = null;
-            n.prev = null;
+            o.clear();
         }
 
         /// Get node by the key.
@@ -166,80 +226,14 @@ pub fn BinarySearchTree(
 
         /// Minimum node in the tree or null if empty.
         pub fn minimum(self: *Self) ?*Node {
-            return minimumFor(self.root orelse return null);
-        }
-
-        pub fn minimumFor(n_: *Node) *Node {
-            var n: *Node = n_;
-            while (true)
-                n = n.left orelse return n;
+            const root = self.root orelse return null;
+            return root.minimum();
         }
 
         /// Maximum node in the tree or null if empty.
         pub fn maximum(self: *Self) ?*Node {
-            return maximumFor(self.root orelse return null);
-        }
-
-        pub fn maximumFor(n_: *Node) ?*Node {
-            var n: *Node = n_;
-            while (true)
-                n = n.right orelse return n;
-        }
-
-        pub fn successor(self: *Self, n: *Node) ?*Node {
-            _ = self;
-            return successor_(n);
-        }
-
-        fn successor_(n: *Node) ?*Node {
-            if (n.right) |right| return minimumFor(right);
-
-            var prev = n;
-            var curr = n.prev orelse return null;
-            while (prev == curr.right) {
-                prev = curr;
-                curr = curr.prev orelse return null;
-            }
-            return curr;
-        }
-
-        fn predecessor(self: *Self, n: *Node) ?*Node {
-            _ = self;
-            return predecessor_(n);
-        }
-
-        fn predecessor_(n: *Node) ?*Node {
-            if (n.left) |left| return maximumFor(left);
-
-            var prev = n;
-            var curr = n.prev orelse return null;
-            while (prev == curr.left) {
-                prev = curr;
-                curr = curr.prev orelse return null;
-            }
-            return curr;
-        }
-
-        pub fn walk(
-            self: *Self,
-            comptime WalkContext: type,
-            ctx: *WalkContext,
-            comptime callback: *const fn (*WalkContext, *Node) void,
-        ) void {
-            nodeWalk(self.root, WalkContext, ctx, callback);
-        }
-
-        fn nodeWalk(
-            node: ?*Node,
-            comptime WalkContext: type,
-            ctx: *WalkContext,
-            comptime callback: *const fn (*WalkContext, *Node) void,
-        ) void {
-            if (node == null) return;
-            const n = node.?;
-            nodeWalk(n.left, WalkContext, ctx, callback);
-            callback(ctx, n);
-            nodeWalk(n.right, WalkContext, ctx, callback);
+            const root = self.root orelse return null;
+            return root.maximum()();
         }
 
         /// Remove node with key from the tree.
@@ -256,7 +250,7 @@ pub fn BinarySearchTree(
         /// Remove node n from tree by giving node pointer.
         pub fn remove(self: *Self, n: *Node) void {
             assert(self.root.? == n or (n.left != null or n.right != null or n.prev != null));
-            defer clearPointers(n);
+            defer n.clear();
             self.node_count -= 1;
             const left = n.left orelse {
                 self.transplant(n, n.right);
@@ -272,7 +266,7 @@ pub fn BinarySearchTree(
                 right.left = left;
                 return;
             }
-            const y = minimumFor(right);
+            const y = right.minimum();
             assert(y.left == null);
             self.transplant(y, y.right);
             self.transplant(n, y);
@@ -300,28 +294,40 @@ pub fn BinarySearchTree(
             if (v) |vv| vv.prev = prev;
         }
 
-        /// Print graphviz (dot) representation of the tree
-        /// Example; call printDotGraph from test, remove stderr and create dot file from the stdout:
-        /// $ zig test --test-filter fetchRemove binary_search_tree.zig 2>/dev/null > tree.dot
-        fn printDotGraph(self: *Self) !void {
-            const root = self.root orelse return;
-            const stdout = std.io.getStdOut().writer();
+        /// Graphviz (dot) representation of the tree.
+        const Dot = struct {
+            tree: *Self,
 
-            try stdout.print("\ndigraph {{\n\tgraph [ordering=\"out\"];\n", .{});
-            try printPointers(root);
-            try stdout.print("}}\n", .{});
-        }
+            /// Print dot graph to the stdout.
+            /// Can be used in tests to get graph on stdout. Test is writing to stderr so if we discard that we gat only dot.
+            /// $ zig test --test-filter fetchRemove binary_search_tree.zig 2>/dev/null > tree.dot
+            pub fn print(self: *const Dot) !void {
+                try self.write(std.fs.File.Writer, std.io.getStdOut().writer());
+            }
 
-        fn printPointers(n: *Node) !void {
-            const stdout = std.io.getStdOut().writer();
-            if (n.left) |left| {
-                try stdout.print("\t{d} -> {d} [label=\"L\" color=\"red\"];\n", .{ n.key, left.key });
-                try printPointers(left);
+            /// Actual dot graph writer.
+            fn write(self: *const Dot, comptime Writer: type, writer: Writer) !void {
+                try writer.print("\ndigraph {{\n\tgraph [ordering=\"out\"];\n", .{});
+                var it = self.tree.preorderIter();
+                while (it.next()) |n| {
+                    if (n.left) |left|
+                        try writer.print("\t{d} -> {d} [label=\"L\" color=\"red\"];\n", .{ n.key, left.key });
+                    if (n.right) |right|
+                        try writer.print("\t{d} -> {d} [label=\"R\" color=\"blue\"];\n", .{ n.key, right.key });
+                }
+                try writer.print("}}\n", .{});
             }
-            if (n.right) |right| {
-                try stdout.print("\t{d} -> {d} [label=\"R\" color=\"blue\"];\n", .{ n.key, right.key });
-                try printPointers(right);
+
+            /// Open file and write dot to the file.
+            fn save(self: *const Dot, path: []const u8) !void {
+                var file = try std.fs.cwd().createFile(path, .{});
+                try self.write(std.fs.File.Writer, file.writer());
+                defer file.close();
             }
+        };
+
+        pub fn dot(self: *Self) Dot {
+            return Dot{ .tree = self };
         }
 
         const Iterator = struct {
@@ -329,7 +335,7 @@ pub fn BinarySearchTree(
 
             pub fn next(self: *Iterator) ?*Node {
                 var curr = self.curr orelse return null;
-                self.curr = successor_(curr);
+                self.curr = curr.successor();
                 return curr;
             }
         };
@@ -338,6 +344,21 @@ pub fn BinarySearchTree(
         /// Nodes are iterated in ascending key order.
         pub fn iter(self: *Self) Iterator {
             return .{ .curr = self.minimum() };
+        }
+
+        const PreorderIterator = struct {
+            curr: ?*Node,
+
+            pub fn next(self: *PreorderIterator) ?*Node {
+                var curr = self.curr orelse return null;
+                self.curr = curr.preoderNext();
+                return curr;
+            }
+        };
+
+        // Preorder iterator visits root before any node in its subtrees.
+        pub fn preorderIter(self: *Self) PreorderIterator {
+            return PreorderIterator{ .curr = self.root };
         }
     };
 }
@@ -386,6 +407,20 @@ const TestTreeFactory = struct {
         }
         unreachable;
     }
+
+    // Returns default tree used in tests:
+    //                 15
+    //               /    \
+    //              6     18
+    //             / \    / \
+    //            3   7  17  20
+    //           / \   \
+    //          2   4   13
+    //                  /
+    //                 9
+    fn default() !TestTreeFactory {
+        return try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    }
 };
 
 test "tree insert" {
@@ -431,7 +466,7 @@ test "random insert/delete" {
     const Tree = BinarySearchTree(usize, void, void, testLess);
     var t: Tree = .{ .context = {} };
 
-    const num_nodes: usize = 1024;
+    const num_nodes: usize = 128;
     var elems = try alloc.alloc(Tree.Node, num_nodes);
     var nodes = try alloc.alloc(*Tree.Node, num_nodes);
     defer alloc.free(elems);
@@ -448,7 +483,7 @@ test "random insert/delete" {
         try t.putNoClobber(n);
     }
     t.assertInvariants(t.root.?);
-    //t.printDotGraph();
+    //try t.printDotGraph();
 
     // delete in random order
     rnd.shuffle(*Tree.Node, nodes);
@@ -498,7 +533,7 @@ test "tree delete node" {
     t.assertInvariants(t.root.?);
     try testing.expect(t.count() == 6);
 
-    try testing.expect(Tree.minimumFor(&r) == &y);
+    try testing.expect(r.minimum() == &y);
     t.remove(&z);
     //printDotGraph(Node, t.root.?);
 
@@ -571,32 +606,32 @@ test "tree delete node" {
 }
 
 test "tree successor/predecessor" {
-    var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    var ttf = try TestTreeFactory.default();
     defer ttf.deinit();
-    var tree = ttf.tree;
-    try testing.expect(tree.successor(ttf.node(2)).?.key == 3);
-    try testing.expect(tree.successor(ttf.node(3)).?.key == 4);
-    try testing.expect(tree.successor(ttf.node(4)).?.key == 6);
-    try testing.expect(tree.successor(ttf.node(6)).?.key == 7);
-    try testing.expect(tree.successor(ttf.node(7)).?.key == 9);
-    try testing.expect(tree.successor(ttf.node(9)).?.key == 13);
-    try testing.expect(tree.successor(ttf.node(13)).?.key == 15);
-    try testing.expect(tree.successor(ttf.node(15)).?.key == 17);
-    try testing.expect(tree.successor(ttf.node(17)).?.key == 18);
-    try testing.expect(tree.successor(ttf.node(18)).?.key == 20);
-    try testing.expect(tree.successor(ttf.node(20)) == null);
 
-    try testing.expect(tree.predecessor(ttf.node(2)) == null);
-    try testing.expect(tree.predecessor(ttf.node(3)).?.key == 2);
-    try testing.expect(tree.predecessor(ttf.node(4)).?.key == 3);
-    try testing.expect(tree.predecessor(ttf.node(6)).?.key == 4);
-    try testing.expect(tree.predecessor(ttf.node(7)).?.key == 6);
-    try testing.expect(tree.predecessor(ttf.node(9)).?.key == 7);
-    try testing.expect(tree.predecessor(ttf.node(13)).?.key == 9);
-    try testing.expect(tree.predecessor(ttf.node(15)).?.key == 13);
-    try testing.expect(tree.predecessor(ttf.node(17)).?.key == 15);
-    try testing.expect(tree.predecessor(ttf.node(18)).?.key == 17);
-    try testing.expect(tree.predecessor(ttf.node(20)).?.key == 18);
+    try testing.expect(ttf.node(2).successor().?.key == 3);
+    try testing.expect(ttf.node(3).successor().?.key == 4);
+    try testing.expect(ttf.node(4).successor().?.key == 6);
+    try testing.expect(ttf.node(6).successor().?.key == 7);
+    try testing.expect(ttf.node(7).successor().?.key == 9);
+    try testing.expect(ttf.node(9).successor().?.key == 13);
+    try testing.expect(ttf.node(13).successor().?.key == 15);
+    try testing.expect(ttf.node(15).successor().?.key == 17);
+    try testing.expect(ttf.node(17).successor().?.key == 18);
+    try testing.expect(ttf.node(18).successor().?.key == 20);
+    try testing.expect(ttf.node(20).successor() == null);
+
+    try testing.expect(ttf.node(2).predecessor() == null);
+    try testing.expect(ttf.node(3).predecessor().?.key == 2);
+    try testing.expect(ttf.node(4).predecessor().?.key == 3);
+    try testing.expect(ttf.node(6).predecessor().?.key == 4);
+    try testing.expect(ttf.node(7).predecessor().?.key == 6);
+    try testing.expect(ttf.node(9).predecessor().?.key == 7);
+    try testing.expect(ttf.node(13).predecessor().?.key == 9);
+    try testing.expect(ttf.node(15).predecessor().?.key == 13);
+    try testing.expect(ttf.node(17).predecessor().?.key == 15);
+    try testing.expect(ttf.node(18).predecessor().?.key == 17);
+    try testing.expect(ttf.node(20).predecessor().?.key == 18);
 }
 
 test "tree iterator" {
@@ -615,7 +650,7 @@ test "tree iterator" {
 }
 
 test "fetchPut" {
-    var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    var ttf = try TestTreeFactory.default();
     defer ttf.deinit();
     var tree = ttf.tree;
     const Node = TestTreeFactory.Node;
@@ -640,7 +675,7 @@ test "fetchPut" {
 }
 
 test "get/contains" {
-    var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    var ttf = try TestTreeFactory.default();
     defer ttf.deinit();
     var tree = ttf.tree;
 
@@ -654,7 +689,7 @@ test "get/contains" {
 }
 
 test "remove/fetchRemove" {
-    var ttf = try TestTreeFactory.init(&[_]usize{ 15, 18, 17, 20, 6, 3, 7, 2, 4, 13, 9 });
+    var ttf = try TestTreeFactory.default();
     defer ttf.deinit();
     var tree = ttf.tree;
     try testing.expect(tree.root.?.left.?.key == 6);
@@ -669,4 +704,28 @@ test "remove/fetchRemove" {
     tree.assertInvariants(tree.root.?);
 
     try testing.expect(tree.root.?.left.?.key == 7);
+}
+
+test "preorder iterator" {
+    var ttf = try TestTreeFactory.default();
+    defer ttf.deinit();
+    var tree = ttf.tree;
+
+    const p_expected = [_]usize{ 15, 6, 3, 2, 4, 7, 13, 9, 18, 17, 20 };
+    var p_iter = tree.preorderIter();
+    var i: usize = 0;
+    while (p_iter.next()) |n| {
+        try testing.expect(n.key == p_expected[i]);
+        i += 1;
+    }
+
+    const expected = [_]usize{ 2, 3, 4, 6, 7, 9, 13, 15, 17, 18, 20 };
+    var iter = tree.iter();
+    i = 0;
+    while (iter.next()) |n| {
+        try testing.expect(n.key == expected[i]);
+        i += 1;
+    }
+    //try tree.dot().print();
+    //try tree.dot().save("tmp/test.dot");
 }

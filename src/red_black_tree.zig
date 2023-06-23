@@ -12,21 +12,7 @@ pub fn RedBlackTree(
     comptime compareFn: *const fn (ctx: Context, a: K, b: K) Order,
 ) type {
     return struct {
-        const Color = enum {
-            red,
-            black,
-        };
-
-        /// Node inside the tree wrapping the actual data.
-        pub const Node = struct {
-            prev: ?*Node = null,
-            left: ?*Node = null,
-            right: ?*Node = null,
-            color: Color = .red,
-
-            key: K,
-            data: T,
-        };
+        pub const Node = bst.BinarySearchTreeNode(K, T, true);
 
         const Self = @This();
 
@@ -57,13 +43,14 @@ pub fn RedBlackTree(
 
         //  Inserts node n into tree or returns existing one with the same key.
         fn fetchPut_(self: *Self, n: *Node) ?*Node {
-            assert(n.left == null and n.right == null and n.prev == null and n.color == .red);
+            assert(n.left == null and n.right == null and n.prev == null);
             var x: *Node = self.root orelse {
                 self.node_count = 1;
                 n.color = .black;
                 self.root = n;
                 return null;
             };
+            n.color = .red;
             while (true) {
                 x = switch (compareFn(self.context, n.key, x.key)) {
                     .lt => x.left orelse {
@@ -166,18 +153,6 @@ pub fn RedBlackTree(
             if (self.root) |root| root.color = .black;
         }
 
-        // /// Finds leaf node for inserting node n.
-        // /// null if tree is empty, n should be root.
-        // fn leafFor(self: *Self, n: *Node) ?*Node {
-        //     var x: *T = self.root orelse return null;
-        //     while (true) {
-        //         x = if (less(self.context, n, x))
-        //             x.left orelse return x
-        //         else
-        //             x.right orelse return x;
-        //     }
-        // }
-
         /// Left rotate x node with its parent (y node)
         ///
         ///
@@ -275,29 +250,19 @@ pub fn RedBlackTree(
             }
         }
 
-        fn printDotGraph(self: *Self) !void {
-            const root = self.root orelse return;
-            const stdout = std.io.getStdOut().writer();
-
-            try stdout.print("\ndigraph {{\n\tgraph [ordering=\"out\"];\n", .{});
-            try printPointers(root);
-            try stdout.print("}}\n", .{});
+        pub fn dot(self: *Self) bst.Dot(Self) {
+            return .{ .tree = self };
         }
 
-        fn printPointers(n: *Node) !void {
-            const stdout = std.io.getStdOut().writer();
-            if (n.color == .red)
-                try stdout.print("\t{d} [color=\"red\"];\n", .{n.key})
-            else
-                try stdout.print("\t{d} [color=\"black\"];\n", .{n.key});
-            if (n.left) |left| {
-                try stdout.print("\t{d} -> {d} [label=\"L\"];\n", .{ n.key, left.key });
-                try printPointers(left);
-            }
-            if (n.right) |right| {
-                try stdout.print("\t{d} -> {d} [label=\"R\"];\n", .{ n.key, right.key });
-                try printPointers(right);
-            }
+        /// Returns tree nodes iterator.
+        /// Nodes are iterated in ascending key order.
+        pub fn iter(self: *Self) Node.Iterator {
+            return .{ .curr = self.minimum() };
+        }
+
+        // Preorder iterator visits root before any node in its subtrees.
+        pub fn preorderIter(self: *Self) Node.PreorderIterator {
+            return .{ .curr = self.root };
         }
     };
 }
@@ -394,8 +359,8 @@ test "rbt random create" {
         var tree = ttf.tree;
         try testing.expect(tree.count() == keys.len);
         try testing.expect(tree.assertInvariants() == 3);
-        // if (i == 0)
-        //     try tree.printDotGraph();
+        // if (i == 17)
+        //     try tree.dot().save("tmp/rbt.dot");
         rnd.shuffle(usize, &keys);
     }
 }

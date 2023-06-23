@@ -6,6 +6,152 @@ pub const Error = error{
     KeyExists,
 };
 
+/// Node inside the tree wrapping the actual data.
+pub fn BinarySearchTreeNode(
+    comptime K: type,
+    comptime T: type,
+    comptime has_color: bool,
+) type {
+    return struct {
+        const Node = @This();
+
+        pub const Color = enum {
+            red,
+            black,
+        };
+
+        key: K,
+        data: T,
+
+        prev: ?*Node = null,
+        left: ?*Node = null,
+        right: ?*Node = null,
+        color: if (has_color) Color else void = undefined,
+
+        // Minimum in this node subtree.
+        pub fn minimum(self: *Node) *Node {
+            var n: *Node = self;
+            while (true)
+                n = n.left orelse return n;
+        }
+
+        // Maximum in this node subtree.
+        pub fn maximum(self: *Node) *Node {
+            var n: *Node = self;
+            while (true)
+                n = n.right orelse return n;
+        }
+
+        // Returns next node in ascending order.
+        // Or null if node is last in tree ascending order.
+        pub fn successor(self: *Node) ?*Node {
+            // If the node has right edge next is minimum of its right subtree.
+            if (self.right) |right| return right.minimum();
+
+            // Go up all right edges.
+            // Everything on the right is bigger so going up on the right edge gives smaller node.
+            // Loop until found left edge to the parent and return that parent as next.
+            var curr = self;
+            while (true) {
+                var prev = curr.prev orelse return null; // reached root, root.prev == null
+                if (curr == prev.left) return prev; // reached prev from left edge => prev is bigger
+                curr = prev;
+            }
+        }
+
+        fn predecessor(self: *Node) ?*Node {
+            if (self.left) |left| return left.maximum();
+
+            var curr = self;
+            while (true) {
+                var prev = curr.prev orelse return null;
+                if (curr == prev.right) return prev;
+                curr = prev;
+            }
+        }
+
+        // Returns next node for preorder tree walk.
+        // Preorder tree walk visits root before any subtree.
+        fn preoderNext(self: *Node) ?*Node {
+            var curr = self;
+            if (curr.left) |left| return left;
+            if (curr.right) |right| return right;
+
+            while (true) {
+                var prev = curr.prev orelse return null;
+                if (curr == prev.left) {
+                    if (prev.right) |right| return right;
+                    curr = prev;
+                }
+                curr = prev;
+            }
+        }
+
+        /// Replace old node (self) with new n.
+        /// Old is removed from the tree.
+        fn replace(self: *Node, n: *Node) void {
+            n.left = self.left;
+            n.right = self.right;
+            n.prev = self.prev;
+            if (self.prev) |prev| {
+                if (prev.left == self)
+                    prev.left = n
+                else
+                    prev.right = n;
+            }
+            if (self.left) |left| left.prev = n;
+            if (self.right) |right| right.prev = n;
+            self.clear();
+        }
+
+        /// Clears node pointers.
+        /// Node is no more member of a tree.
+        fn clear(self: *Node) void {
+            self.left = null;
+            self.right = null;
+            self.prev = null;
+        }
+
+        fn writeEdges(self: *Node, comptime Writer: type, writer: Writer) !void {
+            if (has_color)
+                if (self.color == .red)
+                    try writer.print("\t{d} [color=\"red\" fontcolor=\"red\"];\n", .{self.key});
+
+            if (self.left) |left|
+                try writeEdge(Writer, writer, self, left, "L", "green");
+            if (self.right) |right|
+                try writeEdge(Writer, writer, self, right, "R", "blue");
+        }
+
+        fn writeEdge(comptime Writer: type, writer: Writer, a: *Node, b: *Node, label: []const u8, color: []const u8) !void {
+            try writer.print(
+                "\t{d} -> {d} [label=\"{s}\" color=\"{s}\" fontcolor=\"{s}\" fontsize=9];\n",
+                .{ a.key, b.key, label, color, color },
+            );
+        }
+
+        pub const Iterator = struct {
+            curr: ?*Node,
+
+            pub fn next(self: *Iterator) ?*Node {
+                var curr = self.curr orelse return null;
+                self.curr = curr.successor();
+                return curr;
+            }
+        };
+
+        pub const PreorderIterator = struct {
+            curr: ?*Node,
+
+            pub fn next(self: *PreorderIterator) ?*Node {
+                var curr = self.curr orelse return null;
+                self.curr = curr.preoderNext();
+                return curr;
+            }
+        };
+    };
+}
+
 pub fn BinarySearchTree(
     comptime K: type, // key data type
     comptime T: type, // value data type
@@ -13,99 +159,7 @@ pub fn BinarySearchTree(
     comptime compareFn: *const fn (ctx: Context, a: K, b: K) Order,
 ) type {
     return struct {
-        /// Node inside the tree wrapping the actual data.
-        pub const Node = struct {
-            prev: ?*Node = null,
-            left: ?*Node = null,
-            right: ?*Node = null,
-
-            key: K,
-            data: T,
-
-            // Minimum in this node subtree.
-            pub fn minimum(self: *Node) *Node {
-                var n: *Node = self;
-                while (true)
-                    n = n.left orelse return n;
-            }
-
-            // Maximum in this node subtree.
-            pub fn maximum(self: *Node) *Node {
-                var n: *Node = self;
-                while (true)
-                    n = n.right orelse return n;
-            }
-
-            // Returns next node in ascending order.
-            // Or null if node is last in tree ascending order.
-            pub fn successor(self: *Node) ?*Node {
-                // If the node has right edge next is minimum of its right subtree.
-                if (self.right) |right| return right.minimum();
-
-                // Go up all right edges.
-                // Everything on the right is bigger so going up on the right edge gives smaller node.
-                // Loop until found left edge to the parent and return that parent as next.
-                var curr = self;
-                while (true) {
-                    var prev = curr.prev orelse return null; // reached root, root.prev == null
-                    if (curr == prev.left) return prev; // reached prev from left edge => prev is bigger
-                    curr = prev;
-                }
-            }
-
-            fn predecessor(self: *Node) ?*Node {
-                if (self.left) |left| return left.maximum();
-
-                var curr = self;
-                while (true) {
-                    var prev = curr.prev orelse return null;
-                    if (curr == prev.right) return prev;
-                    curr = prev;
-                }
-            }
-
-            // Returns next node for preorder tree walk.
-            // Preorder tree walk visits root before any subtree.
-            fn preoderNext(self: *Node) ?*Node {
-                var curr = self;
-                if (curr.left) |left| return left;
-                if (curr.right) |right| return right;
-
-                while (true) {
-                    var prev = curr.prev orelse return null;
-                    if (curr == prev.left) {
-                        if (prev.right) |right| return right;
-                        curr = prev;
-                    }
-                    curr = prev;
-                }
-            }
-
-            /// Replace old node (self) with new n.
-            /// Old is removed from the tree.
-            fn replace(self: *Node, n: *Node) void {
-                n.left = self.left;
-                n.right = self.right;
-                n.prev = self.prev;
-                if (self.prev) |prev| {
-                    if (prev.left == self)
-                        prev.left = n
-                    else
-                        prev.right = n;
-                }
-                if (self.left) |left| left.prev = n;
-                if (self.right) |right| right.prev = n;
-                self.clear();
-            }
-
-            /// Clears node pointers.
-            /// Node is no more member of a tree.
-            fn clear(self: *Node) void {
-                self.left = null;
-                self.right = null;
-                self.prev = null;
-            }
-        };
+        pub const Node = BinarySearchTreeNode(K, T, false);
 
         const Self = @This();
 
@@ -279,75 +333,52 @@ pub fn BinarySearchTree(
             if (v) |vv| vv.prev = prev;
         }
 
-        /// Graphviz (dot) representation of the tree.
-        const Dot = struct {
-            tree: *Self,
-
-            /// Print dot graph to the stdout.
-            /// Can be used in tests to get graph on stdout. Test is writing to stderr so if we discard that we gat only dot.
-            /// $ zig test --test-filter fetchRemove binary_search_tree.zig 2>/dev/null > tree.dot
-            pub fn print(self: *const Dot) !void {
-                try self.write(std.fs.File.Writer, std.io.getStdOut().writer());
-            }
-
-            /// Actual dot graph writer.
-            fn write(self: *const Dot, comptime Writer: type, writer: Writer) !void {
-                try writer.print("\ndigraph {{\n\tgraph [ordering=\"out\"];\n", .{});
-                var it = self.tree.preorderIter();
-                while (it.next()) |n| {
-                    if (n.left) |left|
-                        try writeEdge(Writer, writer, n.key, left.key, "L", "red");
-                    if (n.right) |right|
-                        try writeEdge(Writer, writer, n.key, right.key, "R", "blue");
-                }
-                try writer.print("}}\n", .{});
-            }
-
-            fn writeEdge(comptime Writer: type, writer: Writer, a: K, b: K, label: []const u8, color: []const u8) !void {
-                try writer.print("\t{d} -> {d} [label=\"{s}\" color=\"{s}\"];\n", .{ a, b, label, color });
-            }
-
-            /// Open file and write dot to the file.
-            fn save(self: *const Dot, path: []const u8) !void {
-                var file = try std.fs.cwd().createFile(path, .{});
-                try self.write(std.fs.File.Writer, file.writer());
-                defer file.close();
-            }
-        };
-
-        pub fn dot(self: *Self) Dot {
-            return Dot{ .tree = self };
+        pub fn dot(self: *Self) Dot(Self) {
+            return .{ .tree = self };
         }
-
-        const Iterator = struct {
-            curr: ?*Node,
-
-            pub fn next(self: *Iterator) ?*Node {
-                var curr = self.curr orelse return null;
-                self.curr = curr.successor();
-                return curr;
-            }
-        };
 
         /// Returns tree nodes iterator.
         /// Nodes are iterated in ascending key order.
-        pub fn iter(self: *Self) Iterator {
+        pub fn iter(self: *Self) Node.Iterator {
             return .{ .curr = self.minimum() };
         }
 
-        const PreorderIterator = struct {
-            curr: ?*Node,
-
-            pub fn next(self: *PreorderIterator) ?*Node {
-                var curr = self.curr orelse return null;
-                self.curr = curr.preoderNext();
-                return curr;
-            }
-        };
-
         // Preorder iterator visits root before any node in its subtrees.
-        pub fn preorderIter(self: *Self) PreorderIterator {
-            return PreorderIterator{ .curr = self.root };
+        pub fn preorderIter(self: *Self) Node.PreorderIterator {
+            return .{ .curr = self.root };
+        }
+    };
+}
+
+/// Graphviz (dot) representation of the tree.
+pub fn Dot(comptime Tree: type) type {
+    return struct {
+        const Self = @This();
+
+        tree: *Tree,
+
+        /// Print dot graph to the stdout.
+        /// Can be used in tests to get graph on stdout. Test is writing to stderr so if we discard that we gat only dot.
+        /// $ zig test --test-filter fetchRemove binary_search_tree.zig 2>/dev/null > tree.dot
+        pub fn print(self: *const Self) !void {
+            try self.write(std.fs.File.Writer, std.io.getStdOut().writer());
+        }
+
+        /// Actual dot graph writer.
+        fn write(self: *const Self, comptime Writer: type, writer: Writer) !void {
+            try writer.print("\ndigraph {{\n\tgraph [ordering=\"out\"];\n", .{});
+            var it = self.tree.preorderIter();
+            while (it.next()) |n| {
+                try n.writeEdges(Writer, writer);
+            }
+            try writer.print("}}\n", .{});
+        }
+
+        /// Open file and write dot to the file.
+        pub fn save(self: *const Self, path: []const u8) !void {
+            var file = try std.fs.cwd().createFile(path, .{});
+            try self.write(std.fs.File.Writer, file.writer());
+            defer file.close();
         }
     };
 }
@@ -717,3 +748,11 @@ test "preorder iterator" {
     //try tree.dot().print();
     try tree.dot().save("tmp/test.dot");
 }
+
+// test "are they same size" {
+//     const BST = BinarySearchTree(usize, void, void, compare(usize));
+//     const ColorNode = BinarySearchTreeNode(usize, void, true);
+//     std.debug.print("Node size: {d} {d}\n", .{ @sizeOf(BST.Node), @bitSizeOf(BST.Node) });
+//     std.debug.print("Node2 size: {d} {d}\n", .{ @sizeOf(BST.Node2), @bitSizeOf(BST.Node2) });
+//     std.debug.print("ColorNode size: {d} {d}\n", .{ @sizeOf(ColorNode), @bitSizeOf(ColorNode) });
+// }

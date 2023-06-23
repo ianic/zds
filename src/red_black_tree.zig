@@ -1,16 +1,15 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const CompareResult = @import("binary_search_tree.zig").CompareResult;
+const Order = std.math.Order;
+pub const bst = @import("binary_search_tree.zig");
 
-const Error = error{
-    KeyExists,
-};
+const Error = bst.Error;
 
 pub fn RedBlackTree(
     comptime K: type, // key data type
     comptime T: type, // value data type
     comptime Context: type,
-    comptime compare: *const fn (ctx: Context, a: K, b: K) CompareResult,
+    comptime compareFn: *const fn (ctx: Context, a: K, b: K) Order,
 ) type {
     return struct {
         const Color = enum {
@@ -66,22 +65,22 @@ pub fn RedBlackTree(
                 return null;
             };
             while (true) {
-                x = switch (compare(self.context, n.key, x.key)) {
-                    .less => x.left orelse {
+                x = switch (compareFn(self.context, n.key, x.key)) {
+                    .lt => x.left orelse {
                         self.node_count += 1;
                         n.prev = x;
                         x.left = n;
                         self.putBalance(n);
                         return null;
                     },
-                    .greater => x.right orelse {
+                    .gt => x.right orelse {
                         self.node_count += 1;
                         n.prev = x;
                         x.right = n;
                         self.putBalance(n);
                         return null;
                     },
-                    .equal => {
+                    .eq => {
                         return x;
                     },
                 };
@@ -234,6 +233,11 @@ pub fn RedBlackTree(
             y.prev = x;
         }
 
+        /// Number of nodes in the tree.
+        pub fn count(self: *Self) usize {
+            return self.node_count;
+        }
+
         /// Assert red black tree invariants:
         ///   - root is black
         ///   - if node is red both children are black
@@ -254,14 +258,14 @@ pub fn RedBlackTree(
                 if (node.color == .red) // if node is red both children must be black
                     assert(left.color == .black);
                 assert(left.prev == node);
-                assert(compare(self.context, left.key, node.key) == .less);
+                assert(compareFn(self.context, left.key, node.key) == .lt);
                 self.assertNodeInvariants(left, depth, tree_depth);
             }
             if (node.right) |right| {
                 if (node.color == .red) // if node is red both children must be black
                     assert(right.color == .black);
                 assert(right.prev == node);
-                assert(compare(self.context, right.key, node.key) == .greater);
+                assert(compareFn(self.context, right.key, node.key) == .gt);
                 self.assertNodeInvariants(right, depth, tree_depth);
             }
             if (node.right == null and node.left == null) { // leaf node
@@ -300,15 +304,10 @@ pub fn RedBlackTree(
 
 const testing = std.testing;
 
-fn testCompare(ctx: void, a: usize, b: usize) CompareResult {
-    _ = ctx;
-    if (a < b) return .less;
-    if (a > b) return .greater;
-    return .equal;
-}
+pub const compare = bst.compare;
 
 test "left/right rotate" {
-    const Tree = RedBlackTree(usize, void, void, testCompare);
+    const Tree = RedBlackTree(usize, void, void, compare(usize));
     const Node = Tree.Node;
     var t: Tree = .{ .context = {} };
 
@@ -349,7 +348,7 @@ test "left/right rotate" {
 
 const TestTreeFactory = struct {
     const alloc = testing.allocator;
-    const Tree = RedBlackTree(usize, void, void, testCompare);
+    const Tree = RedBlackTree(usize, void, void, compare(usize));
     const Node = Tree.Node;
 
     tree: Tree,
@@ -389,10 +388,11 @@ test "rbt random create" {
 
     var keys = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 };
 
-    for (0..1024) |_| {
+    for (0..1024) |_| { // test tree creation with 1024 random shuffles
         var ttf = try TestTreeFactory.init(&keys);
         defer ttf.deinit();
         var tree = ttf.tree;
+        try testing.expect(tree.count() == keys.len);
         try testing.expect(tree.assertInvariants() == 3);
         // if (i == 0)
         //     try tree.printDotGraph();

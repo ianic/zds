@@ -1,13 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Order = std.math.Order;
 
-pub const CompareResult = enum {
-    less,
-    equal,
-    greater,
-};
-
-const Error = error{
+pub const Error = error{
     KeyExists,
 };
 
@@ -15,7 +10,7 @@ pub fn BinarySearchTree(
     comptime K: type, // key data type
     comptime T: type, // value data type
     comptime Context: type,
-    comptime compare: *const fn (ctx: Context, a: K, b: K) CompareResult,
+    comptime compareFn: *const fn (ctx: Context, a: K, b: K) Order,
 ) type {
     return struct {
         /// Node inside the tree wrapping the actual data.
@@ -86,7 +81,25 @@ pub fn BinarySearchTree(
                 }
             }
 
-            // Clears node pointers. Node is no more member of a tree.
+            /// Replace old node (self) with new n.
+            /// Old is removed from the tree.
+            fn replace(self: *Node, n: *Node) void {
+                n.left = self.left;
+                n.right = self.right;
+                n.prev = self.prev;
+                if (self.prev) |prev| {
+                    if (prev.left == self)
+                        prev.left = n
+                    else
+                        prev.right = n;
+                }
+                if (self.left) |left| left.prev = n;
+                if (self.right) |right| right.prev = n;
+                self.clear();
+            }
+
+            /// Clears node pointers.
+            /// Node is no more member of a tree.
             fn clear(self: *Node) void {
                 self.left = null;
                 self.right = null;
@@ -106,7 +119,7 @@ pub fn BinarySearchTree(
         /// If key don't exists returns null.
         pub fn fetchPut(self: *Self, n: *Node) ?*Node {
             if (self.fetchPut_(n)) |x| {
-                replace(x, n);
+                x.replace(n);
                 return x;
             }
             return null;
@@ -130,41 +143,24 @@ pub fn BinarySearchTree(
                 return null;
             };
             while (true) {
-                x = switch (compare(self.context, n.key, x.key)) {
-                    .less => x.left orelse {
+                x = switch (compareFn(self.context, n.key, x.key)) {
+                    .lt => x.left orelse {
                         self.node_count += 1;
                         n.prev = x;
                         x.left = n;
                         return null;
                     },
-                    .greater => x.right orelse {
+                    .gt => x.right orelse {
                         self.node_count += 1;
                         n.prev = x;
                         x.right = n;
                         return null;
                     },
-                    .equal => {
+                    .eq => {
                         return x;
                     },
                 };
             }
-        }
-
-        /// Replace old node o with new n.
-        /// Old is removed from the tree.
-        fn replace(o: *Node, n: *Node) void {
-            n.left = o.left;
-            n.right = o.right;
-            n.prev = o.prev;
-            if (o.prev) |prev| {
-                if (prev.left == o)
-                    prev.left = n
-                else
-                    prev.right = n;
-            }
-            if (o.left) |left| left.prev = n;
-            if (o.right) |right| right.prev = n;
-            o.clear();
         }
 
         /// Get node by the key.
@@ -174,14 +170,14 @@ pub fn BinarySearchTree(
                 return null;
             };
             while (true) {
-                x = switch (compare(self.context, key, x.key)) {
-                    .less => x.left orelse {
+                x = switch (compareFn(self.context, key, x.key)) {
+                    .lt => x.left orelse {
                         return null;
                     },
-                    .greater => x.right orelse {
+                    .gt => x.right orelse {
                         return null;
                     },
-                    .equal => {
+                    .eq => {
                         return x;
                     },
                 };
@@ -196,30 +192,19 @@ pub fn BinarySearchTree(
             return self.node_count;
         }
 
-        /// Finds leaf node for inserting node n.
-        /// null if tree is empty, n should be root.
-        fn leafFor(self: *Self, n: *Node) ?*Node {
-            var x: *Node = self.root orelse return null;
-            while (true) {
-                x = if (compare(self.context, n.key, x.key) == .less)
-                    x.left orelse return x
-                else
-                    x.right orelse return x;
-            }
-        }
-
         /// Assert binary search tree property:
         ///   - left node is less than parent
-        ///   - right node is not less than parent
+        ///   - right node is greater less than parent
+        ///   - prev points to parent
         fn assertInvariants(self: *Self, node: *Node) void {
             if (node.left) |left| {
                 assert(left.prev == node);
-                assert(compare(self.context, left.key, node.key) == .less);
+                assert(compareFn(self.context, left.key, node.key) == .lt);
                 self.assertInvariants(left);
             }
             if (node.right) |right| {
                 assert(right.prev == node);
-                assert(compare(self.context, right.key, node.key) == .greater);
+                assert(compareFn(self.context, right.key, node.key) == .gt);
                 self.assertInvariants(right);
             }
         }
@@ -311,11 +296,15 @@ pub fn BinarySearchTree(
                 var it = self.tree.preorderIter();
                 while (it.next()) |n| {
                     if (n.left) |left|
-                        try writer.print("\t{d} -> {d} [label=\"L\" color=\"red\"];\n", .{ n.key, left.key });
+                        try writeEdge(Writer, writer, n.key, left.key, "L", "red");
                     if (n.right) |right|
-                        try writer.print("\t{d} -> {d} [label=\"R\" color=\"blue\"];\n", .{ n.key, right.key });
+                        try writeEdge(Writer, writer, n.key, right.key, "R", "blue");
                 }
                 try writer.print("}}\n", .{});
+            }
+
+            fn writeEdge(comptime Writer: type, writer: Writer, a: K, b: K, label: []const u8, color: []const u8) !void {
+                try writer.print("\t{d} -> {d} [label=\"{s}\" color=\"{s}\"];\n", .{ a, b, label, color });
             }
 
             /// Open file and write dot to the file.
@@ -363,20 +352,23 @@ pub fn BinarySearchTree(
     };
 }
 
-const testing = std.testing;
-
-// Less comparison for usize used in tests
-fn testLess(ctx: void, a: usize, b: usize) CompareResult {
-    _ = ctx;
-    if (a < b) return .less;
-    if (a > b) return .greater;
-    return .equal;
+/// Use to generate a comparator function for a given type: compare(usize)).
+pub fn compare(comptime T: type) fn (void, T, T) Order {
+    return struct {
+        pub fn inner(_: void, a: T, b: T) Order {
+            if (a < b) return .lt;
+            if (a > b) return .gt;
+            return .eq;
+        }
+    }.inner;
 }
+
+const testing = std.testing;
 
 // Produces test tree from the []const usize
 const TestTreeFactory = struct {
     const alloc = testing.allocator;
-    const Tree = BinarySearchTree(usize, void, void, testLess);
+    const Tree = BinarySearchTree(usize, void, void, compare(usize));
     const Node = Tree.Node;
 
     tree: Tree,
@@ -424,7 +416,7 @@ const TestTreeFactory = struct {
 };
 
 test "tree insert" {
-    const Tree = BinarySearchTree(usize, void, void, testLess);
+    const Tree = BinarySearchTree(usize, void, void, compare(usize));
     var t: Tree = .{ .context = {} };
 
     var a = Tree.Node{ .key = 1, .data = {} };
@@ -433,16 +425,12 @@ test "tree insert" {
     var d = Tree.Node{ .key = 4, .data = {} };
 
     try testing.expect(t.count() == 0);
-    try testing.expect(t.leafFor(&a) == null);
     try t.putNoClobber(&c);
     try testing.expect(t.count() == 1);
-    try testing.expect(t.leafFor(&b) == &c);
     try t.putNoClobber(&a);
     try testing.expect(t.count() == 2);
-    try testing.expect(t.leafFor(&b) == &a);
     try t.putNoClobber(&d);
     try testing.expect(t.count() == 3);
-    try testing.expect(t.leafFor(&b) == &a);
     try t.putNoClobber(&b);
     try testing.expect(t.count() == 4);
     t.assertInvariants(t.root.?);
@@ -463,7 +451,7 @@ test "random insert/delete" {
     var dp = std.rand.DefaultPrng.init(0);
     var rnd = dp.random();
 
-    const Tree = BinarySearchTree(usize, void, void, testLess);
+    const Tree = BinarySearchTree(usize, void, void, compare(usize));
     var t: Tree = .{ .context = {} };
 
     const num_nodes: usize = 128;
@@ -496,7 +484,7 @@ test "random insert/delete" {
 }
 
 test "tree delete node" {
-    const Tree = BinarySearchTree(usize, void, void, testLess);
+    const Tree = BinarySearchTree(usize, void, void, compare(usize));
     var t: Tree = .{ .context = {} };
 
     var q = Tree.Node{ .key = 1, .data = {} };
@@ -727,5 +715,5 @@ test "preorder iterator" {
         i += 1;
     }
     //try tree.dot().print();
-    //try tree.dot().save("tmp/test.dot");
+    try tree.dot().save("tmp/test.dot");
 }

@@ -5,8 +5,13 @@ const assert = std.debug.assert;
 // BST with read and black *links* satisfying:
 //  * red links lean left
 //  * no node has two red links connected to it
-//  * the tree has perfect black balanc: every path from the root to a null link
+//  * the tree has perfect black balance: every path from the root to a null link
 //  has the same number of black links
+// This uses recursive insert implementation.
+//
+// TODO:
+// * deletion
+// * nodes with the same value, they are not supported in current implementation
 
 pub fn RedBlackBST(
     comptime T: type,

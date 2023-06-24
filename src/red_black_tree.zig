@@ -5,6 +5,17 @@ pub const bst = @import("binary_search_tree.zig");
 
 const Error = bst.Error;
 
+/// Red Black Tree implementation from Cormen Introduction to Algorithms, third edition, chapter 13.
+/// Properties of red black tree:
+///   * every node is either black or red
+///   * root is black
+///   * if node is red than both children are black
+///   * for each node, all simple paths from the node to descendant leaves contain the same number of black nodes
+///
+/// Implementation in book uses sentinel nil node for all leafs. I'm not using
+/// that in this implementation in order to reuse node from BinarySearchTreeNode
+/// which uses null pointers not sentinel.
+///
 pub fn RedBlackTree(
     comptime K: type, // key data type
     comptime T: type, // value data type
@@ -78,9 +89,9 @@ pub fn RedBlackTree(
         fn putBalance(self: *Self, n: *Node) void {
             var z = n;
             while (true) {
-                const p = z.prev orelse break; // n is root
+                const p = z.prev orelse break; // z is root
                 if (p.color == .black) break;
-                const pp = p.prev orelse break; // n is depth 1
+                const pp = p.prev orelse break; // z is depth 1
                 if (p == pp.left) {
                     if (pp.right) |y| {
                         if (y.color == .red) {
@@ -184,58 +195,48 @@ pub fn RedBlackTree(
         }
 
         /// Remove node n from tree by giving node pointer.
+        /// Sentinel node is inserted instead of null left/right node
+        /// because removeBalance needs that extra sentinel node.
         pub fn remove(self: *Self, n: *Node) void {
-            //std.debug.print("remove {d}\n", .{n.key});
             assert(self.root.? == n or (n.left != null or n.right != null or n.prev != null));
             defer n.clear();
-            if (n == self.root and n.left == null and n.right == null) {
-                self.root = null;
-                return;
-            }
+            self.node_count -= 1;
 
             var original_color = n.color;
-            var x: *Node = n;
-            var sentinel: Node = Node{ .color = .black, .left = null, .right = null, .prev = null, .key = 0, .data = undefined };
+            var sentinel: Node = Node{ .color = .black, .left = null, .right = null, .prev = null, .key = undefined, .data = undefined };
+            var x: *Node = &sentinel; // node to run removeBalance on it
             defer {
                 if (original_color == .black)
-                    self.fixRemove(x);
-                if (x == &sentinel) {
+                    self.removeBalance(x);
+                if (x == &sentinel) { // remove sentinel if used during removeBalance
                     if (sentinel.prev) |prev| {
                         if (prev.left == &sentinel)
                             prev.left = null
                         else
                             prev.right = null;
                     }
+                    if (self.root == &sentinel)
+                        self.root = null;
                 }
             }
-            self.node_count -= 1;
 
             const left = n.left orelse {
-                x = n.right orelse blk: {
-                    sentinel.prev = n;
-                    n.right = &sentinel;
-                    break :blk &sentinel;
-                };
+                n.right = n.right orelse &sentinel;
+                x = n.right.?;
                 self.transplant(n, n.right);
                 return;
             };
             const right = n.right orelse {
-                x = n.left orelse blk: {
-                    sentinel.prev = n;
-                    n.left = &sentinel;
-                    break :blk &sentinel;
-                };
+                n.left = n.left orelse &sentinel;
+                x = n.left.?;
                 self.transplant(n, n.left);
                 return;
             };
 
             const y = right.minimum();
             original_color = y.color;
-            x = y.right orelse blk: {
-                sentinel.prev = y;
-                y.right = &sentinel;
-                break :blk &sentinel;
-            };
+            y.right = y.right orelse &sentinel;
+            x = y.right.?;
             if (y.prev == n) {
                 x.prev = y;
             } else {
@@ -249,10 +250,8 @@ pub fn RedBlackTree(
             y.color = n.color;
         }
 
-        fn fixRemove(self: *Self, n: *Node) void {
-            //self.dot().save("tmp/rbt.dot") catch unreachable;
-            // if (n.prev != null)
-            //     std.debug.print("fixRemove {d} prev {d}\n", .{ n.key, n.prev.?.key });
+        /// Balance tree after node remove.
+        fn removeBalance(self: *Self, n: *Node) void {
             var x = n;
             while (true) {
                 if (x.color == .red) break;
@@ -470,48 +469,128 @@ const TestTreeFactory = struct {
     }
 };
 
-test "rbt random create" {
-    var dp = std.rand.DefaultPrng.init(0);
-    var rnd = dp.random();
+const TestKeys = struct {
+    const alloc = testing.allocator;
+    keys: []usize,
+    dp: std.rand.DefaultPrng = std.rand.DefaultPrng.init(0),
 
-    var keys = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 };
+    fn init(len: usize) !TestKeys {
+        var keys = try alloc.alloc(usize, len);
+        for (keys, 0..) |*k, i| {
+            k.* = i;
+        }
+        return .{
+            .keys = keys,
+        };
+    }
+    fn deinit(self: *TestKeys) void {
+        alloc.free(self.keys);
+    }
+    fn shuffle(self: *TestKeys) void {
+        self.dp.random().shuffle(usize, self.keys);
+    }
+};
+
+// test "show keys" {
+//     var tk = try TestKeys.init(10);
+//     defer tk.deinit();
+
+//     std.debug.print("{d}\n", .{tk.keys});
+//     tk.shuffle();
+//     std.debug.print("{d}\n", .{tk.keys});
+//     tk.shuffle();
+//     std.debug.print("{d}\n", .{tk.keys});
+// }
+
+test "rbt random create/remove" {
+    var tk = try TestKeys.init(20);
+    defer tk.deinit();
 
     for (0..1024) |_| { // test tree creation with 1024 random shuffles
-        var ttf = try TestTreeFactory.init(&keys);
+        // create tree
+        var ttf = try TestTreeFactory.init(tk.keys);
         defer ttf.deinit();
         var tree = ttf.tree;
-        try testing.expect(tree.count() == keys.len);
+        try testing.expect(tree.count() == tk.keys.len);
         try testing.expect(tree.assertInvariants() == 3);
-        rnd.shuffle(usize, &keys);
-        for (keys) |key| {
+        // remove from tree in random order
+        tk.shuffle();
+        for (tk.keys) |key| {
             tree.remove(ttf.node(key));
             try testing.expect(tree.assertInvariants() <= 3);
         }
+        try testing.expect(tree.count() == 0);
+        try testing.expect(tree.root == null);
     }
 }
 
-test "remove" {
-    var keys = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 };
+test "remove one node" {
+    var tk = try TestKeys.init(128);
+    defer tk.deinit();
 
-    // var ttf = try TestTreeFactory.init(&keys);
-    // defer ttf.deinit();
-    // var tree = ttf.tree;
-    // try testing.expect(tree.count() == keys.len);
-    // try testing.expect(tree.assertInvariants() == 3);
-
-    // tree.remove(ttf.node(19));
-    // try testing.expect(tree.assertInvariants() == 3);
-
-    for (keys) |key| {
-        var ttf = try TestTreeFactory.init(&keys);
+    for (tk.keys) |key| {
+        // create tree
+        var ttf = try TestTreeFactory.init(tk.keys);
         defer ttf.deinit();
         var tree = ttf.tree;
-
-        try tree.dot().save("tmp/rbt_0.dot");
+        try testing.expect(tree.count() == tk.keys.len);
+        // remove one node
         tree.remove(ttf.node(key));
-        try tree.dot().save("tmp/rbt_2.dot");
+        //try tree.dot().save("tmp/rbt_2.dot");
 
-        try testing.expect(tree.assertInvariants() == 3);
-        //if (key == 2) break;
+        try testing.expectEqual(@as(usize, 6), tree.assertInvariants());
+        try testing.expect(tree.count() == tk.keys.len - 1);
     }
+}
+
+test "insert example from book" {
+    var keys = [_]usize{ 11, 2, 14, 1, 7, 15, 5, 8 };
+    var ttf = try TestTreeFactory.init(&keys);
+    defer ttf.deinit();
+    var tree = ttf.tree;
+    try testing.expect(tree.root == ttf.node(11));
+    // right tree
+    try testing.expect(tree.root.?.right == ttf.node(14));
+    try testing.expect(tree.root.?.right.?.color == .black);
+    try testing.expect(tree.root.?.right.?.right == ttf.node(15));
+    try testing.expect(tree.root.?.right.?.right.?.color == .red);
+    // left tree
+    try testing.expect(tree.root.?.left == ttf.node(2));
+    try testing.expect(tree.root.?.left.?.color == .red);
+    try testing.expect(tree.root.?.left.?.left == ttf.node(1));
+    try testing.expect(tree.root.?.left.?.left.?.color == .black);
+    try testing.expect(tree.root.?.left.?.right == ttf.node(7));
+    try testing.expect(tree.root.?.left.?.right.?.color == .black);
+    try testing.expect(tree.root.?.left.?.right.?.left == ttf.node(5));
+    try testing.expect(tree.root.?.left.?.right.?.left.?.color == .red);
+    try testing.expect(tree.root.?.left.?.right.?.right.?.color == .red);
+
+    var n = TestTreeFactory.Node{ .key = 4, .data = {} };
+    try tree.putNoClobber(&n);
+
+    try testing.expect(tree.root == ttf.node(7));
+    // right tree
+    try testing.expect(tree.root.?.right == ttf.node(11));
+    try testing.expect(tree.root.?.right.?.color == .red);
+    try testing.expect(tree.root.?.right.?.left == ttf.node(8));
+    try testing.expect(tree.root.?.right.?.left.?.color == .black);
+    try testing.expect(tree.root.?.right.?.right == ttf.node(14));
+    try testing.expect(tree.root.?.right.?.right.?.color == .black);
+    try testing.expect(tree.root.?.right.?.right.?.right == ttf.node(15));
+    try testing.expect(tree.root.?.right.?.right.?.right.?.color == .red);
+    // left tree
+    try testing.expect(tree.root.?.left == ttf.node(2));
+    try testing.expect(tree.root.?.left.?.color == .red);
+    try testing.expect(tree.root.?.left.?.left == ttf.node(1));
+    try testing.expect(tree.root.?.left.?.left.?.color == .black);
+    try testing.expect(tree.root.?.left.?.right == ttf.node(5));
+    try testing.expect(tree.root.?.left.?.right.?.color == .black);
+    try testing.expect(tree.root.?.left.?.right.?.left == &n);
+    try testing.expect(tree.root.?.left.?.right.?.left.?.color == .red);
+
+    try testing.expect(n.prev == ttf.node(5));
+    try testing.expect(n.left == null);
+    try testing.expect(n.right == null);
+
+    //try tree.dot().save("tmp/rbt_insert.dot");
 }

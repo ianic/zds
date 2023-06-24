@@ -26,7 +26,7 @@ pub fn RedBlackTree(
         /// If key don't exists returns null.
         pub fn fetchPut(self: *Self, n: *Node) ?*Node {
             if (self.fetchPut_(n)) |x| {
-                replace(x, n);
+                x.replace(n);
                 return x;
             }
             return null;
@@ -72,31 +72,6 @@ pub fn RedBlackTree(
                     },
                 };
             }
-        }
-
-        /// Replace old node o with new n.
-        /// Old is removed from the tree.
-        fn replace(o: *Node, n: *Node) void {
-            n.left = o.left;
-            n.right = o.right;
-            n.prev = o.prev;
-            n.color = o.color;
-            if (o.prev) |prev| {
-                if (prev.left == o)
-                    prev.left = n
-                else
-                    prev.right = n;
-            }
-            if (o.left) |left| left.prev = n;
-            if (o.right) |right| right.prev = n;
-            clearPointers(o);
-        }
-
-        fn clearPointers(n: *Node) void {
-            n.left = null;
-            n.right = null;
-            n.prev = null;
-            n.color = .red;
         }
 
         /// Balance tree after putting node n.
@@ -206,6 +181,154 @@ pub fn RedBlackTree(
             // y to x right
             x.right = y;
             y.prev = x;
+        }
+
+        /// Remove node n from tree by giving node pointer.
+        pub fn remove(self: *Self, n: *Node) void {
+            //std.debug.print("remove {d}\n", .{n.key});
+            assert(self.root.? == n or (n.left != null or n.right != null or n.prev != null));
+            defer n.clear();
+            if (n == self.root and n.left == null and n.right == null) {
+                self.root = null;
+                return;
+            }
+
+            var original_color = n.color;
+            var x: *Node = n;
+            var sentinel: Node = Node{ .color = .black, .left = null, .right = null, .prev = null, .key = 0, .data = undefined };
+            defer {
+                if (original_color == .black)
+                    self.fixRemove(x);
+                if (x == &sentinel) {
+                    if (sentinel.prev) |prev| {
+                        if (prev.left == &sentinel)
+                            prev.left = null
+                        else
+                            prev.right = null;
+                    }
+                }
+            }
+            self.node_count -= 1;
+
+            const left = n.left orelse {
+                x = n.right orelse blk: {
+                    sentinel.prev = n;
+                    n.right = &sentinel;
+                    break :blk &sentinel;
+                };
+                self.transplant(n, n.right);
+                return;
+            };
+            const right = n.right orelse {
+                x = n.left orelse blk: {
+                    sentinel.prev = n;
+                    n.left = &sentinel;
+                    break :blk &sentinel;
+                };
+                self.transplant(n, n.left);
+                return;
+            };
+
+            const y = right.minimum();
+            original_color = y.color;
+            x = y.right orelse blk: {
+                sentinel.prev = y;
+                y.right = &sentinel;
+                break :blk &sentinel;
+            };
+            if (y.prev == n) {
+                x.prev = y;
+            } else {
+                self.transplant(y, y.right);
+                y.right = right;
+                right.prev = y;
+            }
+            self.transplant(n, y);
+            y.left = left;
+            left.prev = y;
+            y.color = n.color;
+        }
+
+        fn fixRemove(self: *Self, n: *Node) void {
+            //self.dot().save("tmp/rbt.dot") catch unreachable;
+            // if (n.prev != null)
+            //     std.debug.print("fixRemove {d} prev {d}\n", .{ n.key, n.prev.?.key });
+            var x = n;
+            while (true) {
+                if (x.color == .red) break;
+                const prev = x.prev orelse break; // x.prev == null means root
+                assert(prev.left != null and prev.right != null);
+                if (x == prev.left) {
+                    var w = prev.right.?;
+                    if (w.color == .red) {
+                        w.color = .black;
+                        prev.color = .red;
+                        self.leftRotate(prev);
+                        w = prev.right.?;
+                    }
+                    if ((w.left == null or w.left.?.color == .black) and
+                        (w.right == null or w.right.?.color == .black))
+                    {
+                        w.color = .red;
+                        x = prev;
+                        continue;
+                    }
+                    if (w.right == null or w.right.?.color == .black) {
+                        w.left.?.color = .black;
+                        w.color = .red;
+                        self.rightRotate(w);
+                        w = prev.right.?;
+                    }
+                    w.color = prev.color;
+                    prev.color = .black;
+                    w.right.?.color = .black;
+                    self.leftRotate(prev);
+                    break;
+                } else {
+                    var w = prev.left.?;
+                    if (w.color == .red) {
+                        w.color = .black;
+                        prev.color = .red;
+                        self.rightRotate(prev);
+                        w = prev.left.?;
+                    }
+                    if ((w.right == null or w.right.?.color == .black) and
+                        (w.left == null or w.left.?.color == .black))
+                    {
+                        w.color = .red;
+                        x = prev;
+                        continue;
+                    }
+                    if (w.left == null or w.left.?.color == .black) {
+                        w.right.?.color = .black;
+                        w.color = .red;
+                        self.leftRotate(w);
+                        w = prev.left.?;
+                    }
+                    w.color = prev.color;
+                    prev.color = .black;
+                    w.left.?.color = .black;
+                    self.rightRotate(prev);
+                    break;
+                }
+            }
+            x.color = .black;
+        }
+
+        /// Transplant replaces the subtree rooted at node u with the subtree
+        /// rooted at node v.
+        fn transplant(self: *Self, u: *Node, v: ?*Node) void {
+            const prev = u.prev orelse {
+                // u was the root, replace it with v
+                self.root = v;
+                if (v) |vv| vv.prev = null;
+                return;
+            };
+            if (u == prev.left)
+                prev.left = v
+            else
+                prev.right = v;
+            if (v) |vv| vv.prev = prev;
         }
 
         /// Number of nodes in the tree.
@@ -359,8 +482,36 @@ test "rbt random create" {
         var tree = ttf.tree;
         try testing.expect(tree.count() == keys.len);
         try testing.expect(tree.assertInvariants() == 3);
-        // if (i == 17)
-        //     try tree.dot().save("tmp/rbt.dot");
         rnd.shuffle(usize, &keys);
+        for (keys) |key| {
+            tree.remove(ttf.node(key));
+            try testing.expect(tree.assertInvariants() <= 3);
+        }
+    }
+}
+
+test "remove" {
+    var keys = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 };
+
+    // var ttf = try TestTreeFactory.init(&keys);
+    // defer ttf.deinit();
+    // var tree = ttf.tree;
+    // try testing.expect(tree.count() == keys.len);
+    // try testing.expect(tree.assertInvariants() == 3);
+
+    // tree.remove(ttf.node(19));
+    // try testing.expect(tree.assertInvariants() == 3);
+
+    for (keys) |key| {
+        var ttf = try TestTreeFactory.init(&keys);
+        defer ttf.deinit();
+        var tree = ttf.tree;
+
+        try tree.dot().save("tmp/rbt_0.dot");
+        tree.remove(ttf.node(key));
+        try tree.dot().save("tmp/rbt_2.dot");
+
+        try testing.expect(tree.assertInvariants() == 3);
+        //if (key == 2) break;
     }
 }

@@ -93,6 +93,8 @@ pub fn BinarySearchTreeNode(
             n.left = self.left;
             n.right = self.right;
             n.prev = self.prev;
+            if (has_color)
+                n.color = self.color;
             if (self.prev) |prev| {
                 if (prev.left == self)
                     prev.left = n
@@ -106,10 +108,12 @@ pub fn BinarySearchTreeNode(
 
         /// Clears node pointers.
         /// Node is no more member of a tree.
-        fn clear(self: *Node) void {
+        pub fn clear(self: *Node) void {
             self.left = null;
             self.right = null;
             self.prev = null;
+            if (has_color)
+                self.color = .red;
         }
 
         fn writeEdges(self: *Node, comptime Writer: type, writer: Writer) !void {
@@ -128,6 +132,12 @@ pub fn BinarySearchTreeNode(
                 "\t{d} -> {d} [label=\"{s}\" color=\"{s}\" fontcolor=\"{s}\" fontsize=9];\n",
                 .{ a.key, b.key, label, color, color },
             );
+            if (b.prev != a) {
+                try writer.print(
+                    "\t{d} -> {d} [label=\"P\" fontsize=9];\n",
+                    .{ b.key, b.prev.?.key },
+                );
+            }
         }
 
         pub const Iterator = struct {

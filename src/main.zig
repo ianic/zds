@@ -1,10 +1,17 @@
 const std = @import("std");
 const testing = std.testing;
 
-export fn add(a: i32, b: i32) i32 {
-    return a + b;
-}
+const bst = @import("binary_search_tree.zig").BinarySearchTree;
+pub const BinarySearchTreeNode = bst.BinarySearchTree;
+pub const Error = bst.Error;
+pub const compare = bst.compare;
+
+pub const RedBlackTree = @import("red_black_tree.zig").RedBlackTree;
+
+pub const PairingHeap = @import("pairing_heap.zig").PairingHeap;
 
 test "basic add functionality" {
-    try testing.expect(add(3, 7) == 10);
+    _ = @import("binary_search_tree.zig");
+    _ = @import("red_black_tree.zig");
+    _ = @import("pairing_heap.zig");
 }

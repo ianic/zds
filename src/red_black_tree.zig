@@ -391,7 +391,7 @@ pub fn RedBlackTree(
 
 const testing = std.testing;
 
-pub const compare = bst.compare;
+const compare = bst.compare;
 
 test "left/right rotate" {
     const Tree = RedBlackTree(usize, void, void, compare(usize));
@@ -591,6 +591,23 @@ test "insert example from book" {
     try testing.expect(n.prev == ttf.node(5));
     try testing.expect(n.left == null);
     try testing.expect(n.right == null);
+}
 
-    //try tree.dot().save("tmp/rbt_insert.dot");
+test "fetchPut" {
+    var tk = try TestKeys.init(32);
+    defer tk.deinit();
+    var ttf = try TestTreeFactory.init(tk.keys);
+    defer ttf.deinit();
+    var tree = ttf.tree;
+
+    var old = ttf.node(15);
+    var new = TestTreeFactory.Node{ .key = 15, .data = {} };
+
+    var removed = tree.fetchPut(&new);
+    try testing.expect(removed.? == old);
+
+    var n32 = TestTreeFactory.Node{ .key = 32, .data = {} };
+    try testing.expect(tree.fetchPut(&n32) == null);
+
+    try tree.dot().save("tmp/rbt_fetch_put.dot");
 }

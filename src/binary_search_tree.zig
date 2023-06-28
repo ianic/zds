@@ -89,7 +89,7 @@ pub fn BinarySearchTreeNode(
 
         /// Replace old node (self) with new n.
         /// Old is removed from the tree.
-        fn replace(self: *Node, n: *Node) void {
+        pub fn replace(self: *Node, n: *Node) void {
             n.left = self.left;
             n.right = self.right;
             n.prev = self.prev;
@@ -756,7 +756,7 @@ test "preorder iterator" {
         i += 1;
     }
     //try tree.dot().print();
-    try tree.dot().save("tmp/test.dot");
+    //try tree.dot().save("tmp/test.dot");
 }
 
 // test "are they same size" {

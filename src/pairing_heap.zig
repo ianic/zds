@@ -14,7 +14,7 @@ const assert = std.debug.assert;
 /// data structure can yield much better performance.
 ///
 /// Usage notes:
-/// - The element T is expected to have a field "heap" of type InstrusiveHeapField.
+/// - The element T is expected to have a field "heap" of type IntrusiveHeapField.
 ///   See the tests for a full example of how to set this.
 /// - You can easily make this a min or max heap by inverting the result of
 ///   "less" below.
@@ -211,7 +211,7 @@ pub fn PairingHeap(
         ///  6  4  10
         ///
         /// Returns pointer to 5, 5 has prev to 8, 8 to 2, 2 to 3, 3 to null.
-        /// There is no corresponding next pointers for this prevs.
+        /// There is no corresponding next pointers for this prev pointer.
         ///
         inline fn mergePairsRight(self: *Self, left: *T) *T {
             left.heap.prev = null;
@@ -220,7 +220,7 @@ pub fn PairingHeap(
                 var b = a.heap.next orelse return a;
                 a.heap.next = null;
                 b.heap.prev = null;
-                b = self.meld(a, b); // b next is preseved into b
+                b = self.meld(a, b); // b next is preserved into b
                 a = b.heap.next orelse return b;
                 b.heap.next = null;
             }
@@ -422,7 +422,7 @@ test "heap: remove random values" {
     }
 }
 
-test "heap: this was failing in intial implementation" {
+test "heap: this was failing in initial implementation" {
     const Heap = PairingHeap(Elem, void, Elem.less);
 
     var a: Elem = .{ .value = 2 };

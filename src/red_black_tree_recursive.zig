@@ -17,7 +17,7 @@ const Error = main.Error;
 // TODO:
 // * deletion
 
-pub fn RedBlackBST(
+pub fn RedBlackTree(
     comptime K: type, // key data type
     comptime T: type, // value data type
     comptime Context: type,
@@ -301,7 +301,7 @@ pub fn Dot(comptime Tree: type) type {
 const testing = std.testing;
 
 test "left/right rotate" {
-    const Tree = RedBlackBST(usize, void, void, compare(usize));
+    const Tree = RedBlackTree(usize, void, void, compare(usize));
     var t: Tree = .{ .context = {} };
 
     var x = Tree.Node{ .key = 2, .data = {} };
@@ -346,7 +346,7 @@ test "left/right rotate" {
 
 const TestTreeFactory = struct {
     const alloc = testing.allocator;
-    const Tree = RedBlackBST(usize, void, void, compare(usize));
+    const Tree = RedBlackTree(usize, void, void, compare(usize));
     const Node = Tree.Node;
 
     tree: Tree,
@@ -379,7 +379,7 @@ const TestTreeFactory = struct {
 };
 
 test "insert into single 3 node case 1 larger" {
-    const Tree = RedBlackBST(usize, void, void, compare(usize));
+    const Tree = RedBlackTree(usize, void, void, compare(usize));
     const Node = Tree.Node;
     var t: Tree = .{ .context = {} };
 
@@ -403,7 +403,7 @@ test "insert into single 3 node case 1 larger" {
 }
 
 test "insert into single 3 node case 2 smaller" {
-    const Tree = RedBlackBST(usize, void, void, compare(usize));
+    const Tree = RedBlackTree(usize, void, void, compare(usize));
     const Node = Tree.Node;
     var t: Tree = .{ .context = {} };
 
@@ -427,7 +427,7 @@ test "insert into single 3 node case 2 smaller" {
 }
 
 test "insert into single 3 node case 3 between" {
-    const Tree = RedBlackBST(usize, void, void, compare(usize));
+    const Tree = RedBlackTree(usize, void, void, compare(usize));
     const Node = Tree.Node;
     var t: Tree = .{ .context = {} };
 
@@ -451,7 +451,7 @@ test "insert into single 3 node case 3 between" {
 }
 
 test "insert into 3 node at the bottom" {
-    const Tree = RedBlackBST(usize, void, void, compare(usize));
+    const Tree = RedBlackTree(usize, void, void, compare(usize));
     const Node = Tree.Node;
     var t: Tree = .{ .context = {} };
 

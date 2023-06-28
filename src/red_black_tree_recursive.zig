@@ -45,10 +45,6 @@ pub fn RedBlackTree(
 
             key: K,
             data: T,
-
-            fn colorName(self: *@This()) []const u8 {
-                return self.color.string();
-            }
         };
 
         root: ?*Node = null,
@@ -280,11 +276,11 @@ pub fn Dot(comptime Tree: type) type {
 
         fn writeNode(self: *const Self, comptime Writer: type, writer: Writer, n: *Tree.Node) !void {
             if (n.left) |left| {
-                try writer.print("\t{d} -> {d} [label=\"L\" color=\"{s}\" fontsize=9];\n", .{ n.key, left.key, left.colorName() });
+                try writer.print("\t{d} -> {d} [label=\"L\" color=\"{s}\" fontsize=9];\n", .{ n.key, left.key, left.color.string() });
                 try self.writeNode(Writer, writer, left);
             }
             if (n.right) |right| {
-                try writer.print("\t{d} -> {d} [label=\"R\" color=\"{s}\" fontsize=9];\n", .{ n.key, right.key, right.colorName() });
+                try writer.print("\t{d} -> {d} [label=\"R\" color=\"{s}\" fontsize=9];\n", .{ n.key, right.key, right.color.string() });
                 try self.writeNode(Writer, writer, right);
             }
         }
@@ -526,7 +522,7 @@ test "count/get/fetchPut" {
     var n7 = Node{ .key = 7, .data = {} };
     try testing.expect(tree.putNoClober(&n7) == Error.KeyExists);
 
-    try tree.dot().save("tmp/rbt.dot");
+    //try tree.dot().save("tmp/rbt.dot");
 
     var replaced = tree.fetchPut(&n7);
     try testing.expect(replaced.?.key == 7);

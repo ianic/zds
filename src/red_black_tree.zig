@@ -330,9 +330,57 @@ pub fn RedBlackTree(
             if (v) |vv| vv.prev = prev;
         }
 
+        /// Get node by the key.
+        /// Null if there is no node for that key.
+        pub fn get(self: *Self, key: K) ?*Node {
+            var x: *Node = self.root orelse {
+                return null;
+            };
+            while (true) {
+                x = switch (compareFn(self.context, key, x.key)) {
+                    .lt => x.left orelse {
+                        return null;
+                    },
+                    .gt => x.right orelse {
+                        return null;
+                    },
+                    .eq => {
+                        return x;
+                    },
+                };
+            }
+        }
+
+        pub fn contains(self: *Self, key: K) bool {
+            return self.get(key) != null;
+        }
+
+        /// Minimum node in the tree or null if empty.
+        pub fn minimum(self: *Self) ?*Node {
+            const root = self.root orelse return null;
+            return root.minimum();
+        }
+
+        /// Maximum node in the tree or null if empty.
+        pub fn maximum(self: *Self) ?*Node {
+            const root = self.root orelse return null;
+            return root.maximum();
+        }
+
         /// Number of nodes in the tree.
         pub fn count(self: *Self) usize {
             return self.node_count;
+        }
+
+        /// Remove node with key from the tree.
+        /// Returns node so caller can deinit it.
+        /// Returns null if key not in the tree.
+        pub fn fetchRemove(self: *Self, key: K) ?*Node {
+            if (self.get(key)) |n| {
+                self.remove(n);
+                return n;
+            }
+            return null;
         }
 
         /// Assert red black tree invariants:
@@ -593,7 +641,7 @@ test "insert example from book" {
     try testing.expect(n.right == null);
 }
 
-test "fetchPut" {
+test "fetchPut/putNoClobber" {
     var tk = try TestKeys.init(32);
     defer tk.deinit();
     var ttf = try TestTreeFactory.init(tk.keys);
@@ -603,11 +651,43 @@ test "fetchPut" {
     var old = ttf.node(15);
     var new = TestTreeFactory.Node{ .key = 15, .data = {} };
 
+    try testing.expect(tree.count() == 32);
+    try testing.expect(tree.putNoClobber(&new) == Error.KeyExists);
+    try testing.expect(tree.count() == 32);
     var removed = tree.fetchPut(&new);
     try testing.expect(removed.? == old);
+    try testing.expect(tree.count() == 32);
 
     var n32 = TestTreeFactory.Node{ .key = 32, .data = {} };
     try testing.expect(tree.fetchPut(&n32) == null);
+    try testing.expect(tree.count() == 33);
 
-    try tree.dot().save("tmp/rbt_fetch_put.dot");
+    var n33 = TestTreeFactory.Node{ .key = 33, .data = {} };
+    try tree.putNoClobber(&n33);
+    try testing.expect(tree.count() == 34);
+
+    //try tree.dot().save("tmp/rbt_fetch_put.dot");
+}
+
+test "get/remove/fetchRemove/minimum/maximum" {
+    var tk = try TestKeys.init(32);
+    defer tk.deinit();
+    var ttf = try TestTreeFactory.init(tk.keys);
+    defer ttf.deinit();
+    var tree = ttf.tree;
+
+    try testing.expect(tree.count() == 32);
+    var n15 = ttf.node(15);
+    assert(n15 == tree.get(15));
+    try testing.expect(tree.count() == 32);
+    assert(n15 == tree.fetchRemove(15));
+    try testing.expect(tree.count() == 31);
+
+    try testing.expect(tree.minimum().?.key == 0);
+    try testing.expect(tree.maximum().?.key == 31);
+    _ = tree.fetchRemove(0);
+    _ = tree.fetchRemove(31);
+    try testing.expect(tree.minimum().?.key == 1);
+    try testing.expect(tree.maximum().?.key == 30);
+    try testing.expect(tree.count() == 29);
 }

@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const bst = @import("binary_search_tree.zig").BinarySearchTree;
+const bst = @import("binary_search_tree.zig");
 pub const BinarySearchTreeNode = bst.BinarySearchTree;
 pub const Error = bst.Error;
 pub const compare = bst.compare;

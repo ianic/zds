@@ -53,14 +53,68 @@ pub fn RedBlackBST(
 
         root: ?*Node = null,
         context: Context,
+        node_count: usize = 0,
 
-        pub fn putNoClober(self: *Self, n: *Node) !void {
+        /// Inserts a new `Node` into the tree, returning the previous one, if any.
+        /// If node with the same key if found it is replaced with n and the previous is returned.
+        /// So the caller has chance to deinit unused node.
+        /// If key don't exists returns null.
+        pub fn fetchPut(self: *Self, n: *Node) ?*Node {
+            self.putNoClober(n) catch {
+                // putNoClobber failed means node with same key as node n exists
+                // find that node in x, and previous of x in prev
+                var x = self.root.?;
+                var prev: ?*Node = null;
+
+                while (true) {
+                    switch (compareFn(self.context, n.key, x.key)) {
+                        .lt => {
+                            prev = x;
+                            x = x.left.?;
+                        },
+                        .gt => {
+                            prev = x;
+                            x = x.right.?;
+                        },
+                        .eq => { //found node n with same key as node n
+                            // replace prev left/right with n
+                            if (prev) |p| {
+                                if (p.left == x) {
+                                    p.left = n;
+                                } else {
+                                    p.right = n;
+                                }
+                            } else {
+                                // or if prev == null the x is root
+                                self.root = n;
+                            }
+                            // set n pointers to x pointers
+                            n.left = x.left;
+                            n.right = x.right;
+                            n.color = x.color;
+                            // delete x pointers
+                            x.left = null;
+                            x.right = null;
+                            x.color = .red;
+                            return x;
+                        },
+                    }
+                }
+            };
+            return null;
+        }
+
+        /// Puts new node into tree if that key not exists.
+        /// If the key is already in the tree returns error.
+        pub fn putNoClober(self: *Self, n: *Node) Error!void {
+            assert(n.left == null and n.right == null and n.color == .red);
             const root = try self.insert_(self.root, n);
             root.color = .black;
+            self.node_count += 1;
             self.root = root;
         }
 
-        fn insert_(self: *Self, h_: ?*Node, n: *Node) !*Node {
+        fn insert_(self: *Self, h_: ?*Node, n: *Node) Error!*Node {
             var h = h_ orelse return n;
 
             switch (compareFn(self.context, n.key, h.key)) {
@@ -79,6 +133,31 @@ pub fn RedBlackBST(
         fn isRed(n_: ?*Node) bool {
             if (n_) |n| return n.color == .red;
             return false;
+        }
+
+        /// Get node by the key.
+        /// Null if there is no node for that key.
+        pub fn get(self: *Self, key: K) ?*Node {
+            var x: *Node = self.root orelse {
+                return null;
+            };
+            while (true) {
+                x = switch (compareFn(self.context, key, x.key)) {
+                    .lt => x.left orelse {
+                        return null;
+                    },
+                    .gt => x.right orelse {
+                        return null;
+                    },
+                    .eq => {
+                        return x;
+                    },
+                };
+            }
+        }
+
+        pub fn count(self: *Self) usize {
+            return self.node_count;
         }
 
         /// Flip colors of two red children.
@@ -431,15 +510,33 @@ test "insert into 3 node at the bottom" {
     try testing.expect(a.left == null);
     try testing.expect(a.right == null);
     try testing.expect(t.assertInvariants() == 1);
-    //t.printDotGraph();
 }
 
-test "print dot graph" {
+test "count/get/fetchPut" {
     //if (true) return error.SkipZigTest;
     var ttf = try TestTreeFactory.init(&[_]usize{ 26, 17, 41, 14, 21, 30, 47, 10, 16, 19, 23, 28, 38, 7, 12, 15, 20, 35, 39, 3 });
+    const Node = TestTreeFactory.Tree.Node;
     defer ttf.deinit();
     var tree = ttf.tree;
     assert(tree.assertInvariants() == 3);
+    try testing.expectEqual(@as(usize, 20), tree.count());
+
+    try testing.expect(tree.get(7).?.key == 7);
+    try testing.expect(tree.get(255) == null);
+    var n7 = Node{ .key = 7, .data = {} };
+    try testing.expect(tree.putNoClober(&n7) == Error.KeyExists);
 
     try tree.dot().save("tmp/rbt.dot");
+
+    var replaced = tree.fetchPut(&n7);
+    try testing.expect(replaced.?.key == 7);
+    try testing.expect(replaced.? != &n7);
+    try testing.expect(n7.left.?.key == 3);
+    try testing.expect(n7.right == null);
+    try testing.expect(n7.color == .black);
+
+    // relaced pointers are deleted
+    try testing.expect(replaced.?.left == null);
+    try testing.expect(replaced.?.right == null);
+    try testing.expect(replaced.?.color == .red);
 }

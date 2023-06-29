@@ -1,4 +1,7 @@
 const std = @import("std");
+const mem = std.mem;
+const sort = std.sort;
+
 const assert = std.debug.assert;
 const Order = std.math.Order;
 
@@ -671,7 +674,7 @@ test "tree iterator" {
 
     // expect that iterator returns sorted values
     var iter = tree.iter();
-    std.sort.sort(usize, &values, {}, std.sort.asc(usize));
+    mem.sort(usize, &values, {}, sort.asc(usize));
     for (values) |v| {
         try testing.expect(iter.next().?.key == v);
     }

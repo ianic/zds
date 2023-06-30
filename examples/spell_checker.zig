@@ -33,11 +33,47 @@ pub fn main() !void {
     const after_load = try Instant.now();
     std.log.info("{d:.3} ms load", .{@as(f64, @floatFromInt(after_load.since(before_load))) / 1e6});
 
+    std.log.info("red black tree", .{});
     try rbt(alloc, dict_words, words);
-    //try bst(alloc, dict_words, words);
+    std.log.info("string hash map", .{});
+    try hash(alloc, dict_words, words);
+    std.log.info("binary search tree", .{});
+    try bst(alloc, dict_words, words);
 }
 
 const WordsList = std.ArrayList([]u8);
+
+fn hash(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
+    const before_fill = try Instant.now();
+
+    var dict = std.StringHashMap(void).init(alloc);
+    defer dict.deinit();
+
+    try dict.ensureTotalCapacity(@intCast(dict_words.items.len));
+    for (dict_words.items) |word| {
+        try dict.putNoClobber(word, {});
+    }
+
+    const before_get = try Instant.now();
+    var hits: usize = 0;
+    var misses: usize = 0;
+    for (words.items) |word| {
+        dict.get(word) orelse {
+            misses += 1;
+            continue;
+        };
+        hits += 1;
+    }
+    const after_all = try Instant.now();
+
+    assert(hits == 480250);
+    assert(misses == 91994);
+    //std.debug.print("hits: {d}, misses: {d}\n", .{ hits, misses });
+
+    std.log.info("{d:.3} ms total", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
+    std.log.info("{d:.3} ms init", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
+    std.log.info("{d:.3} ms get", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
+}
 
 fn rbt(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
     const Tree = zds.RedBlackTree([]const u8, void, void, compareStrings);
@@ -84,6 +120,9 @@ fn bst(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
 
     const before_fill = try Instant.now();
     // fill dictionary
+    var dp = std.rand.DefaultPrng.init(0); // dict_words are sorted without randomization we hit bst worst case
+    dp.random().shuffle([]const u8, dict_words.items);
+
     var dict = Tree{ .context = {} };
     var dict_nodes = try alloc.alloc(Node, dict_words.items.len);
     defer alloc.free(dict_nodes);

@@ -45,6 +45,10 @@ pub fn build(b: *std.Build) !void {
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_main_tests.step);
 
+    const zds = std.build.createModule(b, .{
+        .source_file = .{ .path = "src/main.zig" },
+    });
+
     // build everyting in examples
     const c_dir_path = (comptime thisDir()) ++ "/examples";
     var c_dir = try std.fs.openIterableDirAbsolute(c_dir_path, .{});
@@ -64,7 +68,7 @@ pub fn build(b: *std.Build) !void {
             entry.name,
         });
 
-        std.debug.print("building: {s} => zig-out/bin/{s}\n", .{ entry.name, name });
+        //std.debug.print("building: {s} => zig-out/bin/{s}\n", .{ entry.name, name });
 
         const bin = b.addExecutable(.{
             .name = name,
@@ -72,7 +76,7 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .optimize = optimize,
         });
-        //tst.addModule("xev", xev);
+        bin.addModule("zds", zds);
         //tst.addModule("flow", flow);
         //tst.install();
         b.installArtifact(bin);

@@ -195,8 +195,7 @@ pub fn BinarySearchTree(
         /// Puts new node into tree if that key not exists.
         /// If the key is already in the tree returns error.
         pub fn putNoClobber(self: *Self, n: *Node) Error!void {
-            if (self.fetchPut_(n)) |x| {
-                assert(x.key == n.key);
+            if (self.fetchPut_(n)) |_| {
                 return Error.KeyExists;
             }
         }

@@ -1,20 +1,26 @@
 const std = @import("std");
 const mem = std.mem;
+const log = std.log;
 const zds = @import("zds");
 const Instant = std.time.Instant;
 const assert = std.debug.assert;
+const print = std.debug.print;
 
 fn compareStrings(_: void, lhs: []const u8, rhs: []const u8) std.math.Order {
     return mem.order(u8, lhs, rhs);
 }
+// run from project root:
+// $ zig build -Doptimize=ReleaseFast && zig-out/bin/spell_checker
+// to get test files run from project root:
+// $ mkdir -p tmp && cd tmp && wget https://introcs.cs.princeton.edu/java/data/war+peace.txt && wget https://introcs.cs.princeton.edu/java/data/web2.txt && cd ..
 pub fn main() !void {
     const GPA = std.heap.GeneralPurposeAllocator(.{});
     var gpa: GPA = .{};
     defer _ = gpa.deinit();
     const alloc = gpa.allocator();
 
-    const dictionary = "../tmp/web2.txt";
-    const text_file = "../tmp/war+peace.txt";
+    const dictionary = "./tmp/web2.txt";
+    const text_file = "./tmp/war+peace.txt";
 
     const before_load = try Instant.now();
     var dict_words = try readWords(alloc, dictionary);
@@ -31,14 +37,25 @@ pub fn main() !void {
         words.deinit();
     }
     const after_load = try Instant.now();
-    std.log.info("{d:.3} ms load", .{@as(f64, @floatFromInt(after_load.since(before_load))) / 1e6});
+    print("{d:.3} ms load\n", .{@as(f64, @floatFromInt(after_load.since(before_load))) / 1e6});
 
-    std.log.info("red black tree", .{});
-    try rbt(alloc, dict_words, words);
-    std.log.info("string hash map", .{});
-    try hash(alloc, dict_words, words);
-    std.log.info("binary search tree", .{});
-    try bst(alloc, dict_words, words);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+
+    print("string hash map\n", .{});
+    try hash(arena.allocator(), dict_words, words);
+    print("\tbytes used {d}, per node: {d}\n", .{ arena.queryCapacity(), arena.queryCapacity() / dict_words.items.len });
+    assert(arena.reset(.free_all));
+
+    print("red black tree\n", .{});
+    try rbt(arena.allocator(), dict_words, words);
+    print("\tbytes used {d}, per node: {d}\n", .{ arena.queryCapacity(), arena.queryCapacity() / dict_words.items.len });
+    assert(arena.reset(.free_all));
+
+    print("binary search tree\n", .{});
+    try bst(arena.allocator(), dict_words, words);
+    print("\tbytes used {d}, per node: {d}\n", .{ arena.queryCapacity(), arena.queryCapacity() / dict_words.items.len });
+    assert(arena.reset(.free_all));
 }
 
 const WordsList = std.ArrayList([]u8);
@@ -70,9 +87,9 @@ fn hash(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
     assert(misses == 91994);
     //std.debug.print("hits: {d}, misses: {d}\n", .{ hits, misses });
 
-    std.log.info("{d:.3} ms total", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
-    std.log.info("{d:.3} ms init", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
-    std.log.info("{d:.3} ms get", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
+    print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
+    print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
+    print("\t{d:.3} ms get\n", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
 }
 
 fn rbt(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
@@ -109,9 +126,9 @@ fn rbt(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
     assert(misses == 91994);
     //std.debug.print("hits: {d}, misses: {d}\n", .{ hits, misses });
 
-    std.log.info("{d:.3} ms total", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
-    std.log.info("{d:.3} ms init", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
-    std.log.info("{d:.3} ms get", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
+    print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
+    print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
+    print("\t{d:.3} ms get\n", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
 }
 
 fn bst(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
@@ -151,9 +168,9 @@ fn bst(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
     assert(misses == 91994);
     //std.debug.print("hits: {d}, misses: {d}\n", .{ hits, misses });
 
-    std.log.info("{d:.3} ms total", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
-    std.log.info("{d:.3} ms init", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
-    std.log.info("{d:.3} ms get", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
+    print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
+    print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
+    print("\t{d:.3} ms get\n", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
 }
 
 fn readWords(alloc: mem.Allocator, file_name: []const u8) !std.ArrayList([]u8) {

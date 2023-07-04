@@ -9,9 +9,29 @@ const print = std.debug.print;
 fn compareStrings(_: void, lhs: []const u8, rhs: []const u8) std.math.Order {
     return mem.order(u8, lhs, rhs);
 }
-// run from project root:
-// $ zig build -Doptimize=ReleaseFast && zig-out/bin/spell_checker
-// to get test files run from project root:
+
+// Compare performance on loading dictionary and then checking whether a word is in the dictionary.
+// Example of results:
+//   123.334 ms load
+//   string hash map
+//   	16.597 ms total
+//   	6.182 ms init
+//   	10.415 ms get
+//   	bytes used 13369424, per node: 56
+//   red black tree
+//   	99.753 ms total
+//   	25.438 ms init
+//   	74.314 ms get
+//   	bytes used 16915436, per node: 72
+//   binary search tree
+//   	150.948 ms total
+//   	63.059 ms init
+//   	87.890 ms get
+//      bytes used 14096204, per node: 60
+//
+// Run from project root:
+// $ zig build -Doptimize=ReleaseSafe && zig-out/bin/spell_checker
+// To download test files run from project root:
 // $ mkdir -p tmp && cd tmp && wget https://introcs.cs.princeton.edu/java/data/war+peace.txt && wget https://introcs.cs.princeton.edu/java/data/web2.txt && cd ..
 pub fn main() !void {
     const GPA = std.heap.GeneralPurposeAllocator(.{});
@@ -85,7 +105,6 @@ fn hash(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
 
     assert(hits == 480250);
     assert(misses == 91994);
-    //std.debug.print("hits: {d}, misses: {d}\n", .{ hits, misses });
 
     print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
     print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
@@ -124,7 +143,6 @@ fn rbt(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
 
     assert(hits == 480250);
     assert(misses == 91994);
-    //std.debug.print("hits: {d}, misses: {d}\n", .{ hits, misses });
 
     print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
     print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
@@ -166,15 +184,14 @@ fn bst(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
 
     assert(hits == 480250);
     assert(misses == 91994);
-    //std.debug.print("hits: {d}, misses: {d}\n", .{ hits, misses });
 
     print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
     print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
     print("\t{d:.3} ms get\n", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
 }
 
-fn readWords(alloc: mem.Allocator, file_name: []const u8) !std.ArrayList([]u8) {
-    var words = std.ArrayList([]u8).init(alloc);
+fn readWords(alloc: mem.Allocator, file_name: []const u8) !WordsList {
+    var words = WordsList.init(alloc);
 
     var file = try std.fs.cwd().openFile(file_name, .{});
     defer file.close();

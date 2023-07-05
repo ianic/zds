@@ -76,6 +76,11 @@ pub fn main() !void {
     try bst(arena.allocator(), dict_words, words);
     print("\tbytes used {d}, per node: {d}\n", .{ arena.queryCapacity(), arena.queryCapacity() / dict_words.items.len });
     assert(arena.reset(.free_all));
+
+    print("red black tree recursive\n", .{});
+    try rbtr(arena.allocator(), dict_words, words);
+    print("\tbytes used {d}, per node: {d}\n", .{ arena.queryCapacity(), arena.queryCapacity() / dict_words.items.len });
+    assert(arena.reset(.free_all));
 }
 
 const WordsList = std.ArrayList([]u8);
@@ -113,6 +118,44 @@ fn hash(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
 
 fn rbt(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
     const Tree = zds.RedBlackTree([]const u8, void, void, compareStrings);
+    const Node = Tree.Node;
+
+    const before_fill = try Instant.now();
+    // fill dictionary
+    var dict = Tree{ .context = {} };
+    var dict_nodes = try alloc.alloc(Node, dict_words.items.len);
+    defer alloc.free(dict_nodes);
+    for (dict_words.items, 0..) |word, i| {
+        var node = &dict_nodes[i];
+        node.* = Node{
+            .key = word,
+            .data = {},
+        };
+        try dict.putNoClobber(node);
+    }
+
+    const before_get = try Instant.now();
+    var hits: usize = 0;
+    var misses: usize = 0;
+    for (words.items) |word| {
+        _ = dict.get(word) orelse {
+            misses += 1;
+            continue;
+        };
+        hits += 1;
+    }
+    const after_all = try Instant.now();
+
+    assert(hits == 480250);
+    assert(misses == 91994);
+
+    print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_fill))) / 1e6});
+    print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(before_get.since(before_fill))) / 1e6});
+    print("\t{d:.3} ms get\n", .{@as(f64, @floatFromInt(after_all.since(before_get))) / 1e6});
+}
+
+fn rbtr(alloc: mem.Allocator, dict_words: WordsList, words: WordsList) !void {
+    const Tree = zds.RedBlackTreeRecursive([]const u8, void, void, compareStrings);
     const Node = Tree.Node;
 
     const before_fill = try Instant.now();

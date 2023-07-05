@@ -26,7 +26,7 @@ pub fn RedBlackTree(
     return struct {
         const Self = @This();
 
-        const Node = struct {
+        pub const Node = struct {
             const Color = enum {
                 red,
                 black,
@@ -56,7 +56,7 @@ pub fn RedBlackTree(
         /// So the caller has chance to deinit unused node.
         /// If key don't exists returns null.
         pub fn fetchPut(self: *Self, n: *Node) ?*Node {
-            self.putNoClober(n) catch {
+            self.putNoClobber(n) catch {
                 // putNoClobber failed means node with same key as node n exists
                 // find that node in x, and previous of x in prev
                 var x = self.root.?;
@@ -102,7 +102,7 @@ pub fn RedBlackTree(
 
         /// Puts new node into tree if that key not exists.
         /// If the key is already in the tree returns error.
-        pub fn putNoClober(self: *Self, n: *Node) Error!void {
+        pub fn putNoClobber(self: *Self, n: *Node) Error!void {
             assert(n.left == null and n.right == null and n.color == .red);
             const root = try self.insert_(self.root, n);
             root.color = .black;
@@ -353,7 +353,7 @@ const TestTreeFactory = struct {
         var tree = Tree{ .context = {} };
         for (values, 0..) |v, i| {
             nodes[i] = .{ .key = v, .data = {} };
-            try tree.putNoClober(&nodes[i]);
+            try tree.putNoClobber(&nodes[i]);
         }
         return .{
             .nodes = nodes,
@@ -381,15 +381,15 @@ test "insert into single 3 node case 1 larger" {
 
     var a = Node{ .key = 1, .data = {} };
     var b = Node{ .key = 2, .data = {} };
-    try t.putNoClober(&a);
-    try t.putNoClober(&b);
+    try t.putNoClobber(&a);
+    try t.putNoClobber(&b);
     try testing.expect(t.root.? == &b);
     try testing.expect(b.color == .black);
     try testing.expect(a.color == .red);
     try testing.expect(b.left == &a);
 
     var c = Node{ .key = 3, .data = {} };
-    try t.putNoClober(&c);
+    try t.putNoClobber(&c);
     try testing.expect(t.root.? == &b);
     try testing.expect(a.color == .black);
     try testing.expect(b.color == .black);
@@ -405,15 +405,15 @@ test "insert into single 3 node case 2 smaller" {
 
     var b = Node{ .key = 2, .data = {} };
     var c = Node{ .key = 3, .data = {} };
-    try t.putNoClober(&b);
-    try t.putNoClober(&c);
+    try t.putNoClobber(&b);
+    try t.putNoClobber(&c);
     try testing.expect(t.root.? == &c);
     try testing.expect(c.color == .black);
     try testing.expect(b.color == .red);
     try testing.expect(c.left == &b);
 
     var a = Node{ .key = 1, .data = {} };
-    try t.putNoClober(&a);
+    try t.putNoClobber(&a);
     try testing.expect(t.root.? == &b);
     try testing.expect(a.color == .black);
     try testing.expect(b.color == .black);
@@ -429,15 +429,15 @@ test "insert into single 3 node case 3 between" {
 
     var a = Node{ .key = 1, .data = {} };
     var c = Node{ .key = 3, .data = {} };
-    try t.putNoClober(&a);
-    try t.putNoClober(&c);
+    try t.putNoClobber(&a);
+    try t.putNoClobber(&c);
     try testing.expect(t.root.? == &c);
     try testing.expect(c.color == .black);
     try testing.expect(a.color == .red);
     try testing.expect(c.left == &a);
 
     var b = Node{ .key = 2, .data = {} };
-    try t.putNoClober(&b);
+    try t.putNoClobber(&b);
     try testing.expect(t.root.? == &b);
     try testing.expect(a.color == .black);
     try testing.expect(b.color == .black);
@@ -456,11 +456,11 @@ test "insert into 3 node at the bottom" {
     var a = Node{ .key = 'a', .data = {} };
     var s = Node{ .key = 's', .data = {} };
     var r = Node{ .key = 'r', .data = {} };
-    try t.putNoClober(&c);
-    try t.putNoClober(&e);
-    try t.putNoClober(&s);
-    try t.putNoClober(&r);
-    try t.putNoClober(&a);
+    try t.putNoClobber(&c);
+    try t.putNoClobber(&e);
+    try t.putNoClobber(&s);
+    try t.putNoClobber(&r);
+    try t.putNoClobber(&a);
     //       e
     //      / \
     //     c   s
@@ -479,7 +479,7 @@ test "insert into 3 node at the bottom" {
     try testing.expect(t.assertInvariants() == 1);
 
     var h = Node{ .key = 'h', .data = {} };
-    try t.putNoClober(&h);
+    try t.putNoClobber(&h);
     //       r
     //      //\
     //     e   s
@@ -520,7 +520,7 @@ test "count/get/fetchPut" {
     try testing.expect(tree.get(7).?.key == 7);
     try testing.expect(tree.get(255) == null);
     var n7 = Node{ .key = 7, .data = {} };
-    try testing.expect(tree.putNoClober(&n7) == Error.KeyExists);
+    try testing.expect(tree.putNoClobber(&n7) == Error.KeyExists);
 
     //try tree.dot().save("tmp/rbt.dot");
 

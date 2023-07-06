@@ -9,7 +9,12 @@ pub const compare = bst.compare;
 pub const RedBlackTree = @import("red_black_tree.zig").RedBlackTree;
 pub const RedBlackTreeRecursive = @import("red_black_tree_recursive.zig").RedBlackTree;
 
-pub const PairingHeap = @import("pairing_heap.zig").PairingHeap;
+pub const pairing_heap = struct {
+    const ph = @import("pairing_heap.zig");
+
+    pub const Heap = ph.PairingHeap;
+    pub const Field = ph.Field;
+};
 
 test "basic add functionality" {
     _ = @import("binary_search_tree.zig");

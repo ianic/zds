@@ -14,7 +14,7 @@ const assert = std.debug.assert;
 /// data structure can yield much better performance.
 ///
 /// Usage notes:
-/// - The element T is expected to have a field "heap" of type IntrusiveHeapField.
+/// - The element T is expected to have a field "heap" of type Field.
 ///   See the tests for a full example of how to set this.
 /// - You can easily make this a min or max heap by inverting the result of
 ///   "less" below.

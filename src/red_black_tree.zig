@@ -519,7 +519,7 @@ const TestTreeFactory = struct {
 const TestKeys = struct {
     const alloc = testing.allocator;
     keys: []usize,
-    dp: std.rand.DefaultPrng = std.rand.DefaultPrng.init(0),
+    prng: std.rand.DefaultPrng = std.rand.DefaultPrng.init(0),
 
     fn init(len: usize) !TestKeys {
         var keys = try alloc.alloc(usize, len);
@@ -534,7 +534,7 @@ const TestKeys = struct {
         alloc.free(self.keys);
     }
     fn shuffle(self: *TestKeys) void {
-        self.dp.random().shuffle(usize, self.keys);
+        self.prng.random().shuffle(usize, self.keys);
     }
 };
 

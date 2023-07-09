@@ -54,7 +54,6 @@ pub fn main() !void {
         i += 1;
     }
     const after_all = try Instant.now();
-
     print("{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_alloc))) / 1e6});
     print("{d:.3} ms alloc\n", .{@as(f64, @floatFromInt(before_init.since(before_alloc))) / 1e6});
     print("{d:.3} ms init\n", .{@as(f64, @floatFromInt(after_init.since(before_init))) / 1e6});

@@ -19,8 +19,10 @@ Hash map (disctionary):
 Data oriented struct store, array for each struct filed: 
 [multi array list](https://github.com/ziglang/zig/blob/master/lib/std/multi_array_list.zig)
 
+Priority queue backed by multi array list:
 [priority queue](https://github.com/ziglang/zig/blob/master/lib/std/priority_queue.zig)
 
+Priority dequeue backed by array (expanded, shrinked by allocator.realloc):
 [priority dequeue](https://github.com/ziglang/zig/blob/master/lib/std/priority_dequeue.zig)
 
 [segmented list](https://github.com/ziglang/zig/blob/master/lib/std/segmented_list.zig)

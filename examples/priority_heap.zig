@@ -24,18 +24,24 @@ const Timer = struct {
     }
 };
 
-// benchmark:
+// results:
 //   pairing heap
-//           16016.835 ms total
+//           15574.535 ms total
 //           0.005 ms alloc
-//           157.034 ms init
-//           15859.796 ms deleteMin
+//           207.657 ms init
+//           15366.873 ms deleteMin
 //           bytes used 480000044, per node: 48
 //   std priority queue
-//           7509.926 ms total
-//           0.014 ms alloc
-//           247.937 ms init
-//           7261.975 ms deleteMin
+//           7371.620 ms total
+//           0.017 ms alloc
+//           261.780 ms init
+//           7109.823 ms deleteMin
+//           bytes used 787087264, per node: 78
+//   std priority dequeue
+//           7123.672 ms total
+//           0.013 ms alloc
+//           232.244 ms init
+//           6891.415 ms deleteMin
 //           bytes used 787087264, per node: 78
 //
 pub fn main() !void {
@@ -54,6 +60,11 @@ pub fn main() !void {
 
     print("std priority queue\n", .{});
     try std_priority_queue(arena.allocator());
+    print("\tbytes used {d}, per node: {d}\n", .{ arena.queryCapacity(), arena.queryCapacity() / number_of_timers });
+    assert(arena.reset(.free_all));
+
+    print("std priority dequeue\n", .{});
+    try std_priority_dequeue(arena.allocator());
     print("\tbytes used {d}, per node: {d}\n", .{ arena.queryCapacity(), arena.queryCapacity() / number_of_timers });
     assert(arena.reset(.free_all));
 }
@@ -132,5 +143,46 @@ fn std_priority_queue(alloc: mem.Allocator) !void {
     print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_alloc))) / 1e6});
     print("\t{d:.3} ms alloc\n", .{@as(f64, @floatFromInt(before_init.since(before_alloc))) / 1e6});
     print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(after_init.since(before_init))) / 1e6});
-    print("\t{d:.3} ms deleteMin\n", .{@as(f64, @floatFromInt(after_all.since(after_init))) / 1e6});
+    print("\t{d:.3} ms removeOrNull\n", .{@as(f64, @floatFromInt(after_all.since(after_init))) / 1e6});
+}
+
+fn std_priority_dequeue(alloc: mem.Allocator) !void {
+    const Queue = std.PriorityDequeue(*Timer, void, Timer.compare);
+    var queue = Queue.init(alloc, {});
+    defer queue.deinit();
+
+    const before_alloc = try Instant.now();
+    try queue.ensureTotalCapacity(number_of_timers);
+    var timers = try alloc.alloc(Timer, number_of_timers);
+    defer alloc.free(timers);
+
+    var expire_times = try alloc.alloc(usize, timers.len);
+    defer alloc.free(expire_times);
+
+    const before_init = try Instant.now();
+    for (expire_times, 0..) |*k, i| k.* = i;
+    var prng = std.rand.DefaultPrng.init(0);
+    prng.random().shuffle(usize, expire_times);
+
+    for (expire_times, 0..) |e, i| {
+        var timer = &timers[i];
+        timer.* = .{
+            .expires = e,
+            .heap = .{},
+        };
+        try queue.add(timer);
+    }
+    const after_init = try Instant.now();
+
+    var i: usize = 0;
+    while (queue.removeMinOrNull()) |timer| {
+        assert(timer.expires == i);
+        i += 1;
+    }
+
+    const after_all = try Instant.now();
+    print("\t{d:.3} ms total\n", .{@as(f64, @floatFromInt(after_all.since(before_alloc))) / 1e6});
+    print("\t{d:.3} ms alloc\n", .{@as(f64, @floatFromInt(before_init.since(before_alloc))) / 1e6});
+    print("\t{d:.3} ms init\n", .{@as(f64, @floatFromInt(after_init.since(before_init))) / 1e6});
+    print("\t{d:.3} ms removeMinOrNull\n", .{@as(f64, @floatFromInt(after_all.since(after_init))) / 1e6});
 }
